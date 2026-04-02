@@ -1,0 +1,6 @@
+*.pyc
+__pycache__/
+
+*.glow
+*.omi
+!example.omi
