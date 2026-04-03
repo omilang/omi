@@ -12,7 +12,8 @@ from src.var.token import (
     TT_COMMA, TT_ARROW,
     TT_NEWLINE,
     TT_COLON,
-    TT_DOT, TT_AT, TT_TILDE
+    TT_DOT, TT_AT, TT_TILDE,
+    TOKEN_DISPLAY_NAMES,
 )
 
 from src.nodes.types.number import NumberNode
@@ -34,6 +35,8 @@ from src.nodes.jump.continueN import ContinueNode
 from src.nodes.imports.importN import ImportNode
 from src.nodes.imports.moduleaccess import ModuleAccessNode
 from src.nodes.ops.ternaryop import TernaryOpNode
+from src.nodes.directives.useN import UseDirectiveNode
+from src.nodes.directives.setN import SetDirectiveNode
 from src.error.message.invalidsyntax import InvalidSyntaxError
 from src.main.parser.result import ParseResult
 
@@ -68,13 +71,22 @@ class Parser:
     def update_current_tok(self):
         if self.tok_idx >= 0 and self.tok_idx < len(self.tokens):
             self.current_tok = self.tokens[self.tok_idx]
+
+    def describe_token(self, tok=None):
+        tok = tok or self.current_tok
+
+        if tok.type in (TT_IDENTIFIER, TT_KEYWORD, TT_INT, TT_FLOAT):
+            return repr(tok.value)
+        if tok.type in (TT_STRING, TT_FSTRING):
+            return "string"
+        return TOKEN_DISPLAY_NAMES.get(tok.type, tok.type.lower())
     
     def parse(self):
         res = self.statements()
         if not res.error and self.current_tok.type != TT_E0F:
             return res.failure(InvalidSyntaxError(
                 self.current_tok.pos_start, self.current_tok.pos_end,
-                "Expected '+', '-', '*', '/', '^', '==', '!=', '<', '>', <=', '>=', 'and' or 'or'"
+                f"Unexpected {self.describe_token()}. Expected end of statement."
             ))
         return res
 
@@ -98,10 +110,7 @@ class Parser:
         else:
             element_nodes.append(res.register(self.expr()))
             if res.error:
-                return res.failure(InvalidSyntaxError(
-                    self.current_tok.pos_start, self.current_tok.pos_end,
-                    "Expected ']', 'var', 'if', 'for', 'while', 'func', int, float, identifier, '+', '-', '(', '[', 'is' or 'isnt'"
-                ))
+                return res
 
             while self.current_tok.type == TT_COMMA:
                 res.register_advancement()
@@ -434,7 +443,7 @@ class Parser:
 
         return res.failure(InvalidSyntaxError(
             tok.pos_start, tok.pos_end,
-            "Expected int, float, identifier, '+', '-', or '(', '[', 'for', 'while', 'if', 'func'"
+            f"Unexpected {self.describe_token(tok)}. Expected a value, identifier, '(', '[', 'if', 'for', 'while' or 'func'."
         ))
 
     def parse_fstring(self, tok):
@@ -521,10 +530,7 @@ class Parser:
             else:
                 arg_nodes.append(res.register(self.expr()))
                 if res.error:
-                    return res.failure(InvalidSyntaxError(
-                        self.current_tok.pos_start, self.current_tok.pos_end,
-                        "Expected ')', 'var', 'if', 'for', 'while', 'func', int, float, identifier, '+', '-', '(', '[', 'is' or 'isnt'"
-                    ))
+                    return res
 
                 while self.current_tok.type == TT_COMMA:
                     res.register_advancement()
@@ -579,10 +585,7 @@ class Parser:
         node = res.register(self.bin_op(self.arith_expr, (TT_EE, TT_NE, TT_LT, TT_GT, TT_LTE, TT_GTE)))
 
         if res.error:
-            return res.failure(InvalidSyntaxError(
-				self.current_tok.pos_start, self.current_tok.pos_end,
-				"Expected int, float, identifier, '+', '-', '(', '[', 'is' or 'isnt'"
-			))
+            return res
         
         return res.success(node)
 
@@ -632,45 +635,108 @@ class Parser:
             res.register_advancement()
             self.advance()
 
-            if not self.current_tok.matches(TT_KEYWORD, 'import'):
+            if self.current_tok.matches(TT_KEYWORD, 'import'):
+                res.register_advancement()
+                self.advance()
+
+                if self.current_tok.type != TT_STRING:
+                    return res.failure(InvalidSyntaxError(
+                        self.current_tok.pos_start, self.current_tok.pos_end,
+                        "Expected module name (string)"
+                    ))
+
+                module_path_tok = self.current_tok
+                res.register_advancement()
+                self.advance()
+
+                if not self.current_tok.matches(TT_KEYWORD, 'as'):
+                    return res.failure(InvalidSyntaxError(
+                        self.current_tok.pos_start, self.current_tok.pos_end,
+                        "Expected 'as' after module name"
+                    ))
+
+                res.register_advancement()
+                self.advance()
+
+                if self.current_tok.type != TT_IDENTIFIER:
+                    return res.failure(InvalidSyntaxError(
+                        self.current_tok.pos_start, self.current_tok.pos_end,
+                        "Expected identifier for module alias"
+                    ))
+
+                alias_tok = self.current_tok
+                res.register_advancement()
+                self.advance()
+
+                return res.success(ImportNode(module_path_tok, alias_tok, pos_start, self.current_tok.pos_start.copy()))
+
+            elif self.current_tok.matches(TT_KEYWORD, 'use'):
+                res.register_advancement()
+                self.advance()
+
+                if self.current_tok.type not in (TT_IDENTIFIER, TT_KEYWORD):
+                    return res.failure(InvalidSyntaxError(
+                        self.current_tok.pos_start, self.current_tok.pos_end,
+                        "Expected directive name after '@use'"
+                    ))
+
+                directive_tok = self.current_tok
+                res.register_advancement()
+                self.advance()
+
+                return res.success(UseDirectiveNode(directive_tok.value, pos_start, self.current_tok.pos_start.copy()))
+
+            elif self.current_tok.matches(TT_KEYWORD, 'set'):
+                res.register_advancement()
+                self.advance()
+
+                if self.current_tok.type not in (TT_IDENTIFIER, TT_KEYWORD):
+                    return res.failure(InvalidSyntaxError(
+                        self.current_tok.pos_start, self.current_tok.pos_end,
+                        "Expected name after '@set'"
+                    ))
+
+                lhs = self.current_tok.value
+                res.register_advancement()
+                self.advance()
+
+                if self.current_tok.type == TT_DOT:
+                    res.register_advancement()
+                    self.advance()
+                    if self.current_tok.type not in (TT_IDENTIFIER, TT_KEYWORD):
+                        return res.failure(InvalidSyntaxError(
+                            self.current_tok.pos_start, self.current_tok.pos_end,
+                            "Expected member name after '.'"
+                        ))
+                    lhs = lhs + '.' + self.current_tok.value
+                    res.register_advancement()
+                    self.advance()
+
+                if not self.current_tok.matches(TT_KEYWORD, 'as'):
+                    return res.failure(InvalidSyntaxError(
+                        self.current_tok.pos_start, self.current_tok.pos_end,
+                        "Expected 'as' in '@set'"
+                    ))
+                res.register_advancement()
+                self.advance()
+
+                if self.current_tok.type not in (TT_IDENTIFIER, TT_KEYWORD, TT_STRING, TT_INT, TT_FLOAT):
+                    return res.failure(InvalidSyntaxError(
+                        self.current_tok.pos_start, self.current_tok.pos_end,
+                        "Expected value or name after 'as' in '@set'"
+                    ))
+
+                rhs = str(self.current_tok.value)
+                res.register_advancement()
+                self.advance()
+
+                return res.success(SetDirectiveNode(lhs, rhs, pos_start, self.current_tok.pos_start.copy()))
+
+            else:
                 return res.failure(InvalidSyntaxError(
                     self.current_tok.pos_start, self.current_tok.pos_end,
-                    "Expected 'import' after '@'"
+                    "Expected 'import', 'use' or 'set' after '@'"
                 ))
-
-            res.register_advancement()
-            self.advance()
-
-            if self.current_tok.type != TT_STRING:
-                return res.failure(InvalidSyntaxError(
-                    self.current_tok.pos_start, self.current_tok.pos_end,
-                    "Expected module name (string)"
-                ))
-
-            module_path_tok = self.current_tok
-            res.register_advancement()
-            self.advance()
-
-            if not self.current_tok.matches(TT_KEYWORD, 'as'):
-                return res.failure(InvalidSyntaxError(
-                    self.current_tok.pos_start, self.current_tok.pos_end,
-                    "Expected 'as' after module name"
-                ))
-
-            res.register_advancement()
-            self.advance()
-
-            if self.current_tok.type != TT_IDENTIFIER:
-                return res.failure(InvalidSyntaxError(
-                    self.current_tok.pos_start, self.current_tok.pos_end,
-                    "Expected identifier for module alias"
-                ))
-
-            alias_tok = self.current_tok
-            res.register_advancement()
-            self.advance()
-
-            return res.success(ImportNode(module_path_tok, alias_tok, pos_start, self.current_tok.pos_start.copy()))
 
         if self.current_tok.matches(TT_KEYWORD, 'return'):
             res.register_advancement()
@@ -693,10 +759,7 @@ class Parser:
 
         expr = res.register(self.expr())
         if res.error:
-            return res.failure(InvalidSyntaxError(
-                self.current_tok.pos_start, self.current_tok.pos_end,
-                "Expected 'return', 'continue', 'break', 'var', 'if', 'for', 'while', 'func', int, float, identifier, '+', '-', '(', '[', 'is' or 'isnt'"
-            ))
+            return res
         
         return res.success(expr)
 
@@ -710,7 +773,7 @@ class Parser:
             if self.current_tok.type != TT_IDENTIFIER:
                 return res.failure(InvalidSyntaxError(
                     self.current_tok.pos_start, self.current_tok.pos_end,
-                    "Expected identifier"
+                    "Expected variable name after 'var'"
                 ))
             
             var_name = self.current_tok
@@ -720,7 +783,7 @@ class Parser:
             if self.current_tok.type != TT_EQ:
                 return res.failure(InvalidSyntaxError(
                     self.current_tok.pos_start, self.current_tok.pos_end,
-                    "Expected '='"
+                    "Expected '=' after variable name"
                 ))
             
             res.register_advancement()
@@ -731,11 +794,8 @@ class Parser:
 
         node = res.register(self.bin_op(self.comp_expr, ((TT_KEYWORD, "and"), (TT_KEYWORD, "or"))))
 
-        if res.error: 
-            return res.failure(InvalidSyntaxError(
-                self.current_tok.pos_start, self.current_tok.pos_end,
-                "Expected 'var', 'if', 'for', 'while', 'func', int, float, identifier, '+', '-', '(', '[', 'is' or 'isnt'"
-            ))
+        if res.error:
+            return res
 
         if self.current_tok.type == TT_TILDE:
             true_node = node

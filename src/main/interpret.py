@@ -1,19 +1,17 @@
 import os
 import src.values.function.function as Function
+import src.var.flags as runtime_flags
 from src.values.types.number import Number
 from src.values.types.string import String
 from src.values.types.list import List
 from src.values.types.module import Module
 from src.run.runtime import RTResult
 from src.run.context import Context
+from src.run.source import read_source_file
 from src.main.symboltable import SymbolTable
 from src.error.message.rt import RTError
+from src.var.builtin import BUILTIN_MODULES
 from src.var.keyword import FILE_FORMAT
-from src.stdlib.system import create_system_module
-from src.stdlib.files import create_files_module
-from src.stdlib.paths import create_paths_module
-from src.stdlib.time import create_time_module
-from src.stdlib.math import create_math_module
 from src.var.token import (
     TT_MUL, TT_DIV,
     TT_PLUS, TT_MINUS,
@@ -22,14 +20,6 @@ from src.var.token import (
     TT_EE, TT_NE, TT_LT, TT_GT,
                 TT_LTE, TT_GTE
 )
-
-BUILTIN_MODULES = {
-    "system": create_system_module,
-    "files": create_files_module,
-    "paths": create_paths_module,
-    "time": create_time_module,
-    "math": create_math_module,
-}
 
 class Interpreter:
     def visit(self, node, context):
@@ -297,8 +287,7 @@ class Interpreter:
             ))
 
         try:
-            with open(module_file, "r") as f:
-                script = f.read()
+            script = read_source_file(module_file)
         except Exception as e:
             return res.failure(RTError(
                 node.pos_start, node.pos_end,
@@ -404,3 +393,22 @@ class Interpreter:
             val = res.register(self.visit(node.false_node, context))
         if res.should_return(): return res
         return res.success(val.copy().set_pos(node.pos_start, node.pos_end).set_context(context))
+
+    def visit_UseDirectiveNode(self, node, context):
+        directive = node.directive.lower()
+        if directive not in runtime_flags.VALID_DIRECTIVES:
+            return RTResult().failure(RTError(
+                node.pos_start, node.pos_end,
+                f"Unknown directive '@use {directive}'. Valid: {', '.join(sorted(runtime_flags.VALID_DIRECTIVES))}",
+                context
+            ))
+        if directive == 'debug':
+            runtime_flags.debug = True
+        elif directive == 'noecho':
+            runtime_flags.noecho = True
+        elif directive == 'eval':
+            runtime_flags.eval_enabled = True
+        return RTResult().success(Number.null)
+
+    def visit_SetDirectiveNode(self, node, context):
+        return RTResult().success(Number.null)

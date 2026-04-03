@@ -36,3 +36,29 @@ TT_NEWLINE = "NEWLINE"
 TT_COLON = "COLON"
 TT_DOT = "DOT"
 TT_AT = "AT"
+
+TOKEN_DISPLAY_NAMES = {
+    TT_E0F: "end of file",
+    TT_NEWLINE: "newline",
+    TT_PLUS: "'+'",
+    TT_MINUS: "'-'",
+    TT_MUL: "'*'",
+    TT_DIV: "'/'",
+    TT_POW: "'^'",
+    TT_EQ: "'='",
+    TT_EE: "'=='",
+    TT_NE: "'!='",
+    TT_LT: "'<'",
+    TT_GT: "'>'",
+    TT_LTE: "'<='",
+    TT_GTE: "'>='",
+    TT_LPAREN: "'('",
+    TT_RPAREN: "')'",
+    TT_LSQUARE: "'['",
+    TT_RSQUARE: "']'",
+    TT_COMMA: "','",
+    TT_COLON: "':'",
+    TT_DOT: "'.'",
+    TT_AT: "'@'",
+    TT_TILDE: "'~'",
+}

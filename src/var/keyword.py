@@ -17,7 +17,9 @@ KEYWORDS = [
     "continue",
     "break",
     "import",
-    "as"
+    "as",
+    "use",
+    "set"
 ]
 
 FILE_FORMAT = [

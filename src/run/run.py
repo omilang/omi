@@ -43,22 +43,28 @@ global_symbol_table.set("len", BuiltInFunction.len)
 global_symbol_table.set("eval", BuiltInFunction.eval)
 
 def run(fn, text):
-    clean_text, file_flags = process(text)
-    flags.debug = file_flags['debug']
-    flags.noecho = file_flags['noecho']
-    flags.eval_enabled = file_flags['eval']
+    flags.debug = False
+    flags.noecho = False
+    flags.eval_enabled = False
+
+    clean_text = process(text)
 
     lexer = Lexer(fn, clean_text)
     tokens, error = lexer.make_tokens()
-    if error: return None, error, file_flags
+    if error: return None, error, {}
 
     parser = Parser(tokens)
     ast = parser.parse()
-    if ast.error: return None, ast.error, file_flags
+    if ast.error: return None, ast.error, {}
 
     interpreter = Interpreter()
     context = Context("<program>")
     context.symbol_table = global_symbol_table
     result = interpreter.visit(ast.node, context)
 
+    file_flags = {
+        'debug': flags.debug,
+        'noecho': flags.noecho,
+        'eval': flags.eval_enabled,
+    }
     return result.value, result.error, file_flags

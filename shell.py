@@ -1,6 +1,7 @@
 import os
 import sys
 from src.run.run import run
+from src.run.source import read_source_file
 from src.var.keyword import FILE_FORMAT
 
 debug = "--debug" in sys.argv
@@ -13,8 +14,7 @@ if len(_args) >= 2 and _args[0] == "run":
         print("Invalid file format (expected .omi)")
         sys.exit(1)
     try:
-        with open(fn, "r") as f:
-            script = f.read()
+        script = read_source_file(fn)
     except Exception as e:
         print(f"Failed to load script \"{fn}\"\n{e}")
         sys.exit(1)
@@ -43,8 +43,7 @@ while True:
                 continue
 
             try:
-                with open(fn, "r") as f:
-                    script = f.read()
+                script = read_source_file(fn)
             except Exception as e:
                 print(f"Failed to load script \"{fn}\"\n{e}")
                 continue
