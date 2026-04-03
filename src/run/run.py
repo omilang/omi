@@ -5,6 +5,8 @@ from src.main.symboltable import SymbolTable
 from src.run.context import Context
 from src.values.types.number import Number
 from src.values.function.buildin import BuiltInFunction
+from src.preprocessor import process
+import src.var.flags as flags
 
 global_symbol_table = SymbolTable()
 global_symbol_table.set("null", Number.null)
@@ -41,17 +43,22 @@ global_symbol_table.set("len", BuiltInFunction.len)
 global_symbol_table.set("eval", BuiltInFunction.eval)
 
 def run(fn, text):
-    lexer = Lexer(fn, text)
+    clean_text, file_flags = process(text)
+    flags.debug = file_flags['debug']
+    flags.noecho = file_flags['noecho']
+    flags.eval_enabled = file_flags['eval']
+
+    lexer = Lexer(fn, clean_text)
     tokens, error = lexer.make_tokens()
-    if error: return None, error
+    if error: return None, error, file_flags
 
     parser = Parser(tokens)
     ast = parser.parse()
-    if ast.error: return None, ast.error
-    
+    if ast.error: return None, ast.error, file_flags
+
     interpreter = Interpreter()
     context = Context("<program>")
     context.symbol_table = global_symbol_table
     result = interpreter.visit(ast.node, context)
 
-    return result.value, result.error
+    return result.value, result.error, file_flags

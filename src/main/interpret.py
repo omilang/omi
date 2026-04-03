@@ -376,3 +376,31 @@ class Interpreter:
 
     def visit_BreakNode(self, node, context):
         return RTResult().success_break()
+
+    def visit_FStringNode(self, node, context):
+        res = RTResult()
+        result = ""
+        for kind, value in node.parts:
+            if kind == "lit":
+                result += value
+            else:
+                val = res.register(self.visit(value, context))
+                if res.should_return(): return res
+                if isinstance(val, String):
+                    result += val.value
+                else:
+                    result += str(val)
+        return res.success(
+            String(result).set_context(context).set_pos(node.pos_start, node.pos_end)
+        )
+
+    def visit_TernaryOpNode(self, node, context):
+        res = RTResult()
+        cond = res.register(self.visit(node.cond_node, context))
+        if res.should_return(): return res
+        if cond.is_true():
+            val = res.register(self.visit(node.true_node, context))
+        else:
+            val = res.register(self.visit(node.false_node, context))
+        if res.should_return(): return res
+        return res.success(val.copy().set_pos(node.pos_start, node.pos_end).set_context(context))

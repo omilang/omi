@@ -1,5 +1,5 @@
 from src.var.token import (
-    TT_INT, TT_FLOAT, TT_STRING,
+    TT_INT, TT_FLOAT, TT_STRING, TT_FSTRING,
     TT_MUL, TT_DIV,
     TT_POW,
     TT_PLUS, TT_MINUS,
@@ -12,7 +12,7 @@ from src.var.token import (
     TT_COMMA, TT_ARROW,
     TT_NEWLINE,
     TT_COLON,
-    TT_DOT, TT_AT
+    TT_DOT, TT_AT, TT_TILDE
 )
 
 from src.nodes.types.number import NumberNode
@@ -26,14 +26,28 @@ from src.nodes.loops.whileN import WhileNode
 from src.nodes.function.funcdef import FuncDefNode
 from src.nodes.function.call import CallNode
 from src.nodes.types.string import StringNode
+from src.nodes.types.fstring import FStringNode
 from src.nodes.types.list import ListNode
 from src.nodes.jump.breakN import BreakNode
 from src.nodes.jump.returnN import ReturnNode
 from src.nodes.jump.continueN import ContinueNode
 from src.nodes.imports.importN import ImportNode
 from src.nodes.imports.moduleaccess import ModuleAccessNode
+from src.nodes.ops.ternaryop import TernaryOpNode
 from src.error.message.invalidsyntax import InvalidSyntaxError
 from src.main.parser.result import ParseResult
+
+def _sub_parse(expr_src, pos_start):
+    from src.main.lexer import Lexer
+    lexer = Lexer("<fstring>", expr_src)
+    tokens, err = lexer.make_tokens()
+    if err:
+        return None
+    sub_parser = Parser(tokens)
+    result = sub_parser.expr()
+    if result.error:
+        return None
+    return result.node
 
 class Parser:
     def __init__(self, tokens):
@@ -368,6 +382,11 @@ class Parser:
             self.advance()
             return res.success(StringNode(tok))
         
+        if tok.type == TT_FSTRING:
+            res.register_advancement()
+            self.advance()
+            return res.success(self.parse_fstring(tok))
+        
         elif tok.type == TT_IDENTIFIER:
             res.register_advancement()
             self.advance()
@@ -417,6 +436,55 @@ class Parser:
             tok.pos_start, tok.pos_end,
             "Expected int, float, identifier, '+', '-', or '(', '[', 'for', 'while', 'if', 'func'"
         ))
+
+    def parse_fstring(self, tok):
+        raw = tok.value
+        parts = []
+        i = 0
+        buf = ""
+        while i < len(raw):
+            if raw[i] == "~" and i + 1 < len(raw):
+                if buf:
+                    parts.append(("lit", buf))
+                    buf = ""
+                i += 1
+                if raw[i] == "(":
+                    depth = 1
+                    i += 1
+                    expr_buf = ""
+                    while i < len(raw) and depth > 0:
+                        if raw[i] == "(":
+                            depth += 1
+                        elif raw[i] == ")":
+                            depth -= 1
+                            if depth == 0:
+                                i += 1
+                                break
+                        expr_buf += raw[i]
+                        i += 1
+                    node = _sub_parse(expr_buf, tok.pos_start)
+                    if node:
+                        parts.append(("expr", node))
+                    else:
+                        parts.append(("lit", "~(" + expr_buf + ")"))
+                elif raw[i].isalpha() or raw[i] == "_":
+                    id_buf = ""
+                    while i < len(raw) and (raw[i].isalnum() or raw[i] == "_"):
+                        id_buf += raw[i]
+                        i += 1
+                    node = _sub_parse(id_buf, tok.pos_start)
+                    if node:
+                        parts.append(("expr", node))
+                    else:
+                        parts.append(("lit", "~" + id_buf))
+                else:
+                    buf += "~"
+            else:
+                buf += raw[i]
+                i += 1
+        if buf:
+            parts.append(("lit", buf))
+        return FStringNode(parts, tok.pos_start, tok.pos_end)
 
     def power(self):
         return self.bin_op(self.call, (TT_POW, ), self.factor)
@@ -668,6 +736,27 @@ class Parser:
                 self.current_tok.pos_start, self.current_tok.pos_end,
                 "Expected 'var', 'if', 'for', 'while', 'func', int, float, identifier, '+', '-', '(', '[', 'is' or 'isnt'"
             ))
+
+        if self.current_tok.type == TT_TILDE:
+            true_node = node
+            res.register_advancement()
+            self.advance()
+
+            cond_node = res.register(self.bin_op(self.comp_expr, ((TT_KEYWORD, "and"), (TT_KEYWORD, "or"))))
+            if res.error: return res
+
+            if self.current_tok.type != TT_TILDE:
+                return res.failure(InvalidSyntaxError(
+                    self.current_tok.pos_start, self.current_tok.pos_end,
+                    "Expected '~' (ternary false branch)"
+                ))
+            res.register_advancement()
+            self.advance()
+
+            false_node = res.register(self.bin_op(self.comp_expr, ((TT_KEYWORD, "and"), (TT_KEYWORD, "or"))))
+            if res.error: return res
+
+            return res.success(TernaryOpNode(true_node, cond_node, false_node))
 
         return res.success(node)
 

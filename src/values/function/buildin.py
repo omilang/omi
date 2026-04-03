@@ -1,5 +1,6 @@
 import os
 import src.run.run as run
+import src.var.flags as flags
 from src.values.types.number import Number
 from src.values.types.string import String
 from src.values.types.list import List
@@ -39,7 +40,8 @@ class BuiltInFunction(BaseFunction):
     return f"<built-in function {self.name}>"
 
   def execute_print(self, exec_ctx):
-    print(str(exec_ctx.symbol_table.get("value")))
+    if not flags.noecho:
+      print(str(exec_ctx.symbol_table.get("value")))
     return RTResult().success(Number.null)
   execute_print.arg_names = ["value"]
   
@@ -168,6 +170,10 @@ class BuiltInFunction(BaseFunction):
   execute_len.arg_names = ["list"]
 
   def execute_eval(self, exec_ctx):
+    if not flags.eval_enabled:
+      print("Warning: eval() is disabled. Add '@use eval' to your file to enable it.")
+      return RTResult().success(Number.null)
+
     code = exec_ctx.symbol_table.get("code")
 
     if not isinstance(code, String):
@@ -179,7 +185,7 @@ class BuiltInFunction(BaseFunction):
 
     code = code.value
 
-    result, error = run.run("<eval>", code)
+    result, error, _ = run.run("<eval>", code)
     
     if error:
       return RTResult().failure(RTError(
