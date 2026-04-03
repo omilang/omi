@@ -2,19 +2,17 @@
   <img src="logo.png" alt="OmiLang Logo" width="300">
 </p>
 
-<h1 align="center">OmiLang</h1>
+<h1 align="center">Omi Programming Language</h1>
 
 <p align="center">
   An interpreted programming language built with Python
 </p>
 
 <p align="center">
-  Omi — is a fork of <a href="https://github.com/keenigithub/glowlang">GlowLang</a>
+  Fork of <a href="https://github.com/keenigithub/glowlang">GlowLang</a>
 </p>
 <p align="center">
-  <a href="docs/Documentation.md">Documentation</a> ·
-  <a href="docs/Modules.md">Modules</a> ·
-  <a href="docs/Architecture.md">Architecture</a> ·
+  <a href="https://github.com/OmiLang/docs">Documentation</a> ·
   <a href="https://github.com/OmiLang/Omi/discussions">Discussions</a> ·
   <a href="https://github.com/OmiLang/VSCode-Extension">VS Code Extension</a>
 </p>

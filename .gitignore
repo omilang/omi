@@ -4,3 +4,6 @@ __pycache__/
 *.glow
 *.omi
 !example.omi
+
+vscode-extension/
+docs/
