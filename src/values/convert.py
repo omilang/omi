@@ -1,16 +1,17 @@
-"""Utilities for converting between Python native types and Omi Value objects."""
-
-
 def python_to_omi(value):
-    from src.values.types.number import Number
+    from src.values.types.number import Number, Int, Float
     from src.values.types.string import String
     from src.values.types.list import List
     from src.values.types.dict import Dict
+    from src.values.types.boolean import Boolean
+    from src.values.types.null import Null
 
     if isinstance(value, bool):
-        return Number(1) if value else Number(0)
-    if isinstance(value, (int, float)):
-        return Number(value)
+        return Boolean.true if value else Boolean.false
+    if isinstance(value, int):
+        return Int(value)
+    if isinstance(value, float):
+        return Float(value)
     if isinstance(value, str):
         return String(value)
     if isinstance(value, list):
@@ -18,8 +19,7 @@ def python_to_omi(value):
     if isinstance(value, dict):
         return Dict({str(k): python_to_omi(v) for k, v in value.items()})
     if value is None:
-        from src.values.types.number import Number
-        return Number(0)
+        return Null()
     return String(str(value))
 
 
@@ -28,7 +28,13 @@ def omi_to_python(value):
     from src.values.types.string import String
     from src.values.types.list import List
     from src.values.types.dict import Dict
+    from src.values.types.boolean import Boolean
+    from src.values.types.null import Null
 
+    if isinstance(value, Null):
+        return None
+    if isinstance(value, Boolean):
+        return value.value
     if isinstance(value, Number):
         return value.value
     if isinstance(value, String):

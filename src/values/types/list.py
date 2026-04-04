@@ -21,11 +21,11 @@ class List(Value):
       except:
         return None, RTError(
           other.pos_start, other.pos_end,
-          'Element at this index could not be removed from list because index is out of bounds',
+          f'Index {other.value} is out of range for list of length {len(self.elements)}',
           self.context
         )
     else:
-      return None, Value.illegal_operation(self, other)
+      return None, Value.illegal_operation(self, other, op='-')
 
   def multed_by(self, other):
     if isinstance(other, List):
@@ -33,7 +33,7 @@ class List(Value):
       new_list.elements.extend(other.elements)
       return new_list, None
     else:
-      return None, Value.illegal_operation(self, other)
+      return None, Value.illegal_operation(self, other, op='*')
 
   def dived_by(self, other):
     if isinstance(other, Number):
@@ -42,11 +42,11 @@ class List(Value):
       except:
         return None, RTError(
           other.pos_start, other.pos_end,
-          'Element at this index could not be retrieved from list because index is out of bounds',
+          f'Index {other.value} is out of range for list of length {len(self.elements)}',
           self.context
         )
     else:
-      return None, Value.illegal_operation(self, other)
+      return None, Value.illegal_operation(self, other, op='/')
   
   def copy(self):
     copy = List(self.elements)

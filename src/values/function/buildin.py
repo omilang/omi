@@ -5,6 +5,7 @@ from src.values.types.number import Number
 from src.values.types.string import String
 from src.values.types.list import List
 from src.values.types.dict import Dict
+from src.values.types.boolean import Boolean
 from src.run.runtime import RTResult
 from src.error.message.rt import RTError
 from src.values.function.base import BaseFunction
@@ -72,29 +73,37 @@ class BuiltInFunction(BaseFunction):
   execute_clear.arg_names = []
 
   def execute_is_number(self, exec_ctx):
-    is_number = isinstance(exec_ctx.symbol_table.get("value"), Number)
-    return RTResult().success(Number.true if is_number else Number.false)
+    return RTResult().success(Boolean(isinstance(exec_ctx.symbol_table.get("value"), Number)))
   execute_is_number.arg_names = ["value"]
 
+  def execute_is_int(self, exec_ctx):
+    from src.values.types.number import Int
+    return RTResult().success(Boolean(isinstance(exec_ctx.symbol_table.get("value"), Int)))
+  execute_is_int.arg_names = ["value"]
+
+  def execute_is_float(self, exec_ctx):
+    from src.values.types.number import Float
+    return RTResult().success(Boolean(isinstance(exec_ctx.symbol_table.get("value"), Float)))
+  execute_is_float.arg_names = ["value"]
+
+  def execute_is_bool(self, exec_ctx):
+    return RTResult().success(Boolean(isinstance(exec_ctx.symbol_table.get("value"), Boolean)))
+  execute_is_bool.arg_names = ["value"]
+
   def execute_is_string(self, exec_ctx):
-    is_number = isinstance(exec_ctx.symbol_table.get("value"), String)
-    return RTResult().success(Number.true if is_number else Number.false)
+    return RTResult().success(Boolean(isinstance(exec_ctx.symbol_table.get("value"), String)))
   execute_is_string.arg_names = ["value"]
 
   def execute_is_list(self, exec_ctx):
-    is_number = isinstance(exec_ctx.symbol_table.get("value"), List)
-    return RTResult().success(Number.true if is_number else Number.false)
+    return RTResult().success(Boolean(isinstance(exec_ctx.symbol_table.get("value"), List)))
   execute_is_list.arg_names = ["value"]
 
   def execute_is_dict(self, exec_ctx):
-    return RTResult().success(
-      Number.true if isinstance(exec_ctx.symbol_table.get("value"), Dict) else Number.false
-    )
+    return RTResult().success(Boolean(isinstance(exec_ctx.symbol_table.get("value"), Dict)))
   execute_is_dict.arg_names = ["value"]
 
   def execute_is_function(self, exec_ctx):
-    is_number = isinstance(exec_ctx.symbol_table.get("value"), BaseFunction)
-    return RTResult().success(Number.true if is_number else Number.false)
+    return RTResult().success(Boolean(isinstance(exec_ctx.symbol_table.get("value"), BaseFunction)))
   execute_is_function.arg_names = ["value"]
 
   def execute_append(self, exec_ctx):
@@ -204,3 +213,8 @@ class BuiltInFunction(BaseFunction):
 
     return RTResult().success(result.elements[0] if len(result.elements) == 1 else result)
   execute_eval.arg_names = ["code"]
+
+  def execute_is_null(self, exec_ctx):
+    from src.values.types.null import Null
+    return RTResult().success(Boolean(isinstance(exec_ctx.symbol_table.get("value"), Null)))
+  execute_is_null.arg_names = ["value"]

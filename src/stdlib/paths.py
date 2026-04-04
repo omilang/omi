@@ -85,7 +85,8 @@ class PathsBuiltInFunction(BaseFunction):
                 exec_ctx
             ))
 
-        return RTResult().success(Number.true if os.path.exists(path.value) else Number.false)
+        from src.values.types.boolean import Boolean
+        return RTResult().success(Boolean.true if os.path.exists(path.value) else Boolean.false)
     execute_exists.arg_names = ["path"]
 
     def execute_ext(self, exec_ctx):

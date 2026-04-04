@@ -35,12 +35,18 @@ Run a file:
 OmiShell >>> run example.omi
 ```
 
+or
+
+```
+python shell.py run example.omi
+```
+
 ## Example
 
 <!-- js highlights OmiLang syntax better than plain text -->
 
 ```js
-func factorial(n)
+func<int> factorial(n<int>):
   if n <= 1: return 1
   return n * factorial(n - 1)
 end
@@ -52,11 +58,15 @@ end
 ```
 
 ```js
-@import "system" as sys
+@import "omi/system" as sys
+@set sys.username as user
 
-func greet(name)
+func<null> greet(name<string>):
   print("Hello, " + name + "!")
+  return null
 end
 
-greet(sys.username())
+var<string> name = user()
+
+greet(name)
 ```

@@ -4,20 +4,25 @@ from src.main.interpret import Interpreter
 from src.main.symboltable import SymbolTable
 from src.run.context import Context
 from src.values.types.number import Number
+from src.values.types.boolean import Boolean
+from src.values.types.null import Null
 from src.values.function.buildin import BuiltInFunction
 from src.preprocessor import process
 import src.var.flags as flags
 
 global_symbol_table = SymbolTable()
-global_symbol_table.set("null", Number.null)
-global_symbol_table.set("true", Number.true)
-global_symbol_table.set("false", Number.false)
+global_symbol_table.set("null", Null())
+global_symbol_table.set("true", Boolean.true)
+global_symbol_table.set("false", Boolean.false)
 
 BuiltInFunction.print = BuiltInFunction("print")
 BuiltInFunction.input = BuiltInFunction("input")
 BuiltInFunction.input_int = BuiltInFunction("input_int")
 BuiltInFunction.clear = BuiltInFunction("clear")
 BuiltInFunction.is_number = BuiltInFunction("is_number")
+BuiltInFunction.is_int = BuiltInFunction("is_int")
+BuiltInFunction.is_float = BuiltInFunction("is_float")
+BuiltInFunction.is_bool = BuiltInFunction("is_bool")
 BuiltInFunction.is_string = BuiltInFunction("is_string")
 BuiltInFunction.is_list = BuiltInFunction("is_list")
 BuiltInFunction.is_dict = BuiltInFunction("is_dict")
@@ -27,6 +32,7 @@ BuiltInFunction.pop = BuiltInFunction("pop")
 BuiltInFunction.extend = BuiltInFunction("extend")
 BuiltInFunction.len = BuiltInFunction("len")
 BuiltInFunction.eval = BuiltInFunction("eval")
+BuiltInFunction.is_null = BuiltInFunction("is_null")
 
 global_symbol_table.set("print", BuiltInFunction.print)
 global_symbol_table.set("input", BuiltInFunction.input)
@@ -34,10 +40,14 @@ global_symbol_table.set("input_int", BuiltInFunction.input_int)
 global_symbol_table.set("clear", BuiltInFunction.clear)
 global_symbol_table.set("cls", BuiltInFunction.clear)
 global_symbol_table.set("is_num", BuiltInFunction.is_number)
+global_symbol_table.set("is_int", BuiltInFunction.is_int)
+global_symbol_table.set("is_float", BuiltInFunction.is_float)
+global_symbol_table.set("is_bool", BuiltInFunction.is_bool)
 global_symbol_table.set("is_str", BuiltInFunction.is_string)
 global_symbol_table.set("is_list", BuiltInFunction.is_list)
 global_symbol_table.set("is_dict", BuiltInFunction.is_dict)
 global_symbol_table.set("is_func", BuiltInFunction.is_function)
+global_symbol_table.set("is_null", BuiltInFunction.is_null)
 global_symbol_table.set("append", BuiltInFunction.append)
 global_symbol_table.set("pop", BuiltInFunction.pop)
 global_symbol_table.set("extend", BuiltInFunction.extend)
@@ -48,6 +58,7 @@ def run(fn, text):
     flags.debug = False
     flags.noecho = False
     flags.eval_enabled = False
+    flags.notypes = False
 
     clean_text = process(text)
 

@@ -3,11 +3,9 @@ from src.error.message.rt import RTError
 
 
 class Dict(Value):
-    """Key-value dictionary type. Keys are always strings."""
-
     def __init__(self, entries):
         super().__init__()
-        self.entries = entries  # dict[str, Value]
+        self.entries = entries
 
     def get_member(self, name):
         value = self.entries.get(name)

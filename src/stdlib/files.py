@@ -4,34 +4,18 @@ from src.values.value import Value
 from src.values.types.number import Number
 from src.values.types.string import String
 from src.values.types.list import List
+from src.values.types.boolean import Boolean
 from src.values.types.module import Module
-from src.values.function.base import BaseFunction
+from src.values.function.stdlib import StdlibFunction
 from src.run.runtime import RTResult
 from src.run.context import Context
 from src.main.symboltable import SymbolTable
 from src.error.message.rt import RTError
 
 
-class FilesBuiltInFunction(BaseFunction):
+class FilesBuiltInFunction(StdlibFunction):
     def __init__(self, name):
         super().__init__(name)
-
-    def execute(self, args):
-        res = RTResult()
-        exec_ctx = self.generate_new_context()
-
-        method_name = f"execute_{self.name}"
-        method = getattr(self, method_name, self.no_visit_method)
-
-        res.register(self.check_and_populate_args(method.arg_names, args, exec_ctx))
-        if res.should_return(): return res
-
-        return_value = res.register(method(exec_ctx))
-        if res.should_return(): return res
-        return res.success(return_value)
-
-    def no_visit_method(self, node, context):
-        raise Exception(f"No execute_{self.name} method defined")
 
     def copy(self):
         copy = FilesBuiltInFunction(self.name)
@@ -58,7 +42,9 @@ class FilesBuiltInFunction(BaseFunction):
             ))
 
         create_parents = True
-        if isinstance(parents, Number):
+        if isinstance(parents, Boolean):
+            create_parents = parents.value
+        elif isinstance(parents, Number):
             create_parents = parents.value != 0
 
         try:
@@ -74,7 +60,9 @@ class FilesBuiltInFunction(BaseFunction):
             ))
 
         return RTResult().success(Number.null)
-    execute_mkdir.arg_names = ["path", "parents"]
+    execute_mkdir.arg_names = ["path"]
+    execute_mkdir.opt_names = ["parents"]
+    execute_mkdir.opt_defaults_factory = lambda: [Boolean.true]
 
     def execute_rm(self, exec_ctx):
         path = exec_ctx.symbol_table.get("path")
@@ -140,7 +128,9 @@ class FilesBuiltInFunction(BaseFunction):
                 f"Failed to list directory: {e}",
                 exec_ctx
             ))
-    execute_list.arg_names = ["path"]
+    execute_list.arg_names = []
+    execute_list.opt_names = ["path"]
+    execute_list.opt_defaults_factory = lambda: [String(".")]
 
     def execute_cp(self, exec_ctx):
         src = exec_ctx.symbol_table.get("src")

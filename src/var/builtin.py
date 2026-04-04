@@ -6,7 +6,6 @@ from src.stdlib.math import create_math_module
 from src.stdlib.json import create_json_module
 from src.stdlib.http import create_http_module
 
-# Keys use the omi/ prefix that callers write in @import "omi/name" as alias
 BUILTIN_MODULES = {
     "omi/system": create_system_module,
     "omi/files":  create_files_module,

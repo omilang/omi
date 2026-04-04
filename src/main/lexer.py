@@ -88,6 +88,9 @@ class Lexer():
             elif self.current_char == ",":
                 tokens.append(Token(TT_COMMA, pos_start=self.pos))
                 self.advance()
+            elif self.current_char == "|":
+                tokens.append(Token(TT_PIPE, pos_start=self.pos))
+                self.advance()
             elif self.current_char == ":":
                 tokens.append(Token(TT_COLON, pos_start=self.pos))
                 self.advance()
@@ -139,13 +142,12 @@ class Lexer():
         escape_characters = {
             "n": "\n",
             "t": "\t",
-            "~": "\x00TILDE\x00",  # placeholder; handled below
+            "~": "\x00TILDE\x00",
         }
 
         while self.current_char != None and (self.current_char != '"' or escape_character):
             if escape_character:
                 if self.current_char == "~":
-                    # \~ → literal tilde, NOT an interpolation marker
                     string += "\x00TILDE\x00"
                 else:
                     string += escape_characters.get(self.current_char, self.current_char)

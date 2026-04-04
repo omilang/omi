@@ -6,33 +6,16 @@ from src.values.value import Value
 from src.values.types.number import Number
 from src.values.types.string import String
 from src.values.types.module import Module
-from src.values.function.base import BaseFunction
+from src.values.function.stdlib import StdlibFunction
 from src.run.runtime import RTResult
 from src.run.context import Context
 from src.main.symboltable import SymbolTable
 from src.error.message.rt import RTError
 
 
-class SystemBuiltInFunction(BaseFunction):
+class SystemBuiltInFunction(StdlibFunction):
     def __init__(self, name):
         super().__init__(name)
-
-    def execute(self, args):
-        res = RTResult()
-        exec_ctx = self.generate_new_context()
-
-        method_name = f"execute_{self.name}"
-        method = getattr(self, method_name, self.no_visit_method)
-
-        res.register(self.check_and_populate_args(method.arg_names, args, exec_ctx))
-        if res.should_return(): return res
-
-        return_value = res.register(method(exec_ctx))
-        if res.should_return(): return res
-        return res.success(return_value)
-
-    def no_visit_method(self, node, context):
-        raise Exception(f"No execute_{self.name} method defined")
 
     def copy(self):
         copy = SystemBuiltInFunction(self.name)
@@ -114,7 +97,9 @@ class SystemBuiltInFunction(BaseFunction):
             sys.exit(int(code.value))
         else:
             sys.exit(0)
-    execute_exit.arg_names = ["code"]
+    execute_exit.arg_names = []
+    execute_exit.opt_names = ["code"]
+    execute_exit.opt_defaults_factory = lambda: [Number(0)]
 
     def execute_cwd(self, exec_ctx):
         return RTResult().success(String(os.getcwd()))

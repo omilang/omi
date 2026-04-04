@@ -4,32 +4,15 @@ from src.values.types.number import Number
 from src.values.types.string import String
 from src.values.types.list import List
 from src.values.types.module import Module
-from src.values.function.base import BaseFunction
+from src.values.function.stdlib import StdlibFunction
 from src.run.runtime import RTResult
 from src.main.symboltable import SymbolTable
 from src.error.message.rt import RTError
 
 
-class MathBuiltInFunction(BaseFunction):
+class MathBuiltInFunction(StdlibFunction):
     def __init__(self, name):
         super().__init__(name)
-
-    def execute(self, args):
-        res = RTResult()
-        exec_ctx = self.generate_new_context()
-
-        method_name = f"execute_{self.name}"
-        method = getattr(self, method_name, self.no_visit_method)
-
-        res.register(self.check_and_populate_args(method.arg_names, args, exec_ctx))
-        if res.should_return(): return res
-
-        return_value = res.register(method(exec_ctx))
-        if res.should_return(): return res
-        return res.success(return_value)
-
-    def no_visit_method(self, node, context):
-        raise Exception(f"No execute_{self.name} method defined")
 
     def copy(self):
         copy = MathBuiltInFunction(self.name)
@@ -178,7 +161,9 @@ class MathBuiltInFunction(BaseFunction):
                 f"log failed: {e}",
                 exec_ctx
             ))
-    execute_log.arg_names = ["n", "base"]
+    execute_log.arg_names = ["n"]
+    execute_log.opt_names = ["base"]
+    execute_log.opt_defaults = [None]
 
     def execute_exp(self, exec_ctx):
         n = exec_ctx.symbol_table.get("n")
@@ -226,7 +211,9 @@ class MathBuiltInFunction(BaseFunction):
             value = round(value, int(digits.value))
 
         return RTResult().success(Number(value))
-    execute_randfloat.arg_names = ["a", "b", "digits"]
+    execute_randfloat.arg_names = ["a", "b"]
+    execute_randfloat.opt_names = ["digits"]
+    execute_randfloat.opt_defaults = [None]
 
     def execute_choice(self, exec_ctx):
         lst = exec_ctx.symbol_table.get("lst")

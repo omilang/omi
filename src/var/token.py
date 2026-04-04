@@ -32,6 +32,7 @@ TT_GTE = "GTE"
 
 TT_COMMA = "COMMA"
 TT_ARROW = "ARROW"
+TT_PIPE = "PIPE"
 
 TT_NEWLINE = "NEWLINE"
 
@@ -61,6 +62,7 @@ TOKEN_DISPLAY_NAMES = {
     TT_LBRACE: "'{'",
     TT_RBRACE: "'}'",
     TT_COMMA: "','",
+    TT_PIPE: "'|'",
     TT_COLON: "':'",
     TT_DOT: "'.'",
     TT_AT: "'@'",

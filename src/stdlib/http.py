@@ -1,7 +1,6 @@
 import os
 import json as _json
 import urllib.request
-import urllib.parse
 import urllib.error
 
 from src.values.value import Value
@@ -15,14 +14,7 @@ from src.run.runtime import RTResult
 from src.main.symboltable import SymbolTable
 from src.error.message.rt import RTError
 
-
-# ---------------------------------------------------------------------------
-# Response value type
-# ---------------------------------------------------------------------------
-
 class _ResponseJsonFunction(StdlibFunction):
-    """Callable attached to Response objects: response.json()"""
-
     def __init__(self, raw_text):
         super().__init__("json")
         self._raw = raw_text
@@ -55,16 +47,6 @@ class _ResponseJsonFunction(StdlibFunction):
 
 
 class HTTPResponse(Value):
-    """
-    Omi value returned by every http.* request function.
-
-    Accessible attributes (via dot notation):
-        .status   — Number  (HTTP status code)
-        .text     — String  (raw response body)
-        .headers  — Dict    (response headers)
-        .json()   — callable that parses body as JSON → Dict/List/...
-    """
-
     def __init__(self, status, text, headers_dict):
         super().__init__()
         self._members = {
@@ -100,13 +82,7 @@ class HTTPResponse(Value):
     def __str__(self):
         return self.__repr__()
 
-
-# ---------------------------------------------------------------------------
-# Internal HTTP helper
-# ---------------------------------------------------------------------------
-
 def _omi_headers_to_dict(headers_val):
-    """Convert an Omi Dict (or null) to a plain Python dict of strings."""
     if not isinstance(headers_val, Dict):
         return {}
     result = {}
@@ -119,10 +95,6 @@ def _omi_headers_to_dict(headers_val):
 
 
 def _make_request(method, url, body=None, headers_val=None, timeout=30):
-    """
-    Send an HTTP request and return an HTTPResponse value.
-    Raises RuntimeError on network/connection failure.
-    """
     h = _omi_headers_to_dict(headers_val)
 
     data = None
@@ -152,14 +124,8 @@ def _make_request(method, url, body=None, headers_val=None, timeout=30):
 
     return HTTPResponse(status, text, headers_omi)
 
-
-# ---------------------------------------------------------------------------
-# Built-in function class
-# ---------------------------------------------------------------------------
-
 def _null():
     return Number(0)
-
 
 class HTTPBuiltInFunction(StdlibFunction):
     def __init__(self, name):
@@ -174,7 +140,6 @@ class HTTPBuiltInFunction(StdlibFunction):
     def __repr__(self):
         return f"<built-in function http.{self.name}>"
 
-    # ------------------------------------------------------------------ GET
     def execute_get(self, exec_ctx):
         url     = exec_ctx.symbol_table.get("url")
         headers = exec_ctx.symbol_table.get("headers")
@@ -189,7 +154,6 @@ class HTTPBuiltInFunction(StdlibFunction):
     execute_get.opt_names = ["headers"]
     execute_get.opt_defaults_factory = lambda: [_null()]
 
-    # ----------------------------------------------------------------- POST
     def execute_post(self, exec_ctx):
         url     = exec_ctx.symbol_table.get("url")
         body    = exec_ctx.symbol_table.get("body")
@@ -201,11 +165,10 @@ class HTTPBuiltInFunction(StdlibFunction):
         except RuntimeError as e:
             return RTResult().failure(RTError(self.pos_start, self.pos_end, str(e), exec_ctx))
 
-    execute_post.arg_names = ["url", "body"]
-    execute_post.opt_names = ["headers"]
-    execute_post.opt_defaults_factory = lambda: [_null()]
+    execute_post.arg_names = ["url"]
+    execute_post.opt_names = ["body", "headers"]
+    execute_post.opt_defaults_factory = lambda: [_null(), _null()]
 
-    # ------------------------------------------------------------------ PUT
     def execute_put(self, exec_ctx):
         url     = exec_ctx.symbol_table.get("url")
         body    = exec_ctx.symbol_table.get("body")
@@ -217,11 +180,10 @@ class HTTPBuiltInFunction(StdlibFunction):
         except RuntimeError as e:
             return RTResult().failure(RTError(self.pos_start, self.pos_end, str(e), exec_ctx))
 
-    execute_put.arg_names = ["url", "body"]
-    execute_put.opt_names = ["headers"]
-    execute_put.opt_defaults_factory = lambda: [_null()]
+    execute_put.arg_names = ["url"]
+    execute_put.opt_names = ["body", "headers"]
+    execute_put.opt_defaults_factory = lambda: [_null(), _null()]
 
-    # ---------------------------------------------------------------- PATCH
     def execute_patch(self, exec_ctx):
         url     = exec_ctx.symbol_table.get("url")
         body    = exec_ctx.symbol_table.get("body")
@@ -233,11 +195,10 @@ class HTTPBuiltInFunction(StdlibFunction):
         except RuntimeError as e:
             return RTResult().failure(RTError(self.pos_start, self.pos_end, str(e), exec_ctx))
 
-    execute_patch.arg_names = ["url", "body"]
-    execute_patch.opt_names = ["headers"]
-    execute_patch.opt_defaults_factory = lambda: [_null()]
+    execute_patch.arg_names = ["url"]
+    execute_patch.opt_names = ["body", "headers"]
+    execute_patch.opt_defaults_factory = lambda: [_null(), _null()]
 
-    # --------------------------------------------------------------- DELETE
     def execute_delete(self, exec_ctx):
         url     = exec_ctx.symbol_table.get("url")
         headers = exec_ctx.symbol_table.get("headers")
@@ -252,7 +213,6 @@ class HTTPBuiltInFunction(StdlibFunction):
     execute_delete.opt_names = ["headers"]
     execute_delete.opt_defaults_factory = lambda: [_null()]
 
-    # ------------------------------------------------------------- REQUEST
     def execute_request(self, exec_ctx):
         method  = exec_ctx.symbol_table.get("method")
         url     = exec_ctx.symbol_table.get("url")
@@ -271,7 +231,6 @@ class HTTPBuiltInFunction(StdlibFunction):
     execute_request.opt_names = ["body", "headers"]
     execute_request.opt_defaults_factory = lambda: [_null(), _null()]
 
-    # ------------------------------------------------------------ DOWNLOAD
     def execute_download(self, exec_ctx):
         url  = exec_ctx.symbol_table.get("url")
         path = exec_ctx.symbol_table.get("path")
@@ -287,7 +246,6 @@ class HTTPBuiltInFunction(StdlibFunction):
 
     execute_download.arg_names = ["url", "path"]
 
-    # -------------------------------------------------------------- UPLOAD
     def execute_upload(self, exec_ctx):
         url        = exec_ctx.symbol_table.get("url")
         path       = exec_ctx.symbol_table.get("path")
@@ -334,12 +292,9 @@ class HTTPBuiltInFunction(StdlibFunction):
         except Exception as e:
             return RTResult().failure(RTError(self.pos_start, self.pos_end, f"Upload failed: {e}", exec_ctx))
 
-    execute_upload.arg_names = ["url", "path", "field_name"]
-
-
-# ---------------------------------------------------------------------------
-# Module factory
-# ---------------------------------------------------------------------------
+    execute_upload.arg_names = ["url", "path"]
+    execute_upload.opt_names = ["field_name"]
+    execute_upload.opt_defaults_factory = lambda: [_null()]
 
 def create_http_module():
     symbol_table = SymbolTable()

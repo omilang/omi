@@ -1,18 +1,9 @@
-"""BaseFunction subclass that supports optional arguments in stdlib functions."""
 from src.values.function.base import BaseFunction
 from src.run.runtime import RTResult
 from src.error.message.rt import RTError
 
 
 class StdlibFunction(BaseFunction):
-    """
-    Supports two attribute lists on execute_* methods:
-        arg_names       — required positional args
-        opt_names       — optional positional args (matched left-to-right)
-        opt_defaults_factory — zero-arg callable that returns default Value list
-                               (use a factory to avoid mutable-default issues)
-    """
-
     def execute(self, args):
         res = RTResult()
         exec_ctx = self.generate_new_context()

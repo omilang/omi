@@ -2,10 +2,11 @@ import os
 import src.values.function.function as Function
 import src.var.flags as runtime_flags
 from src.preprocessor import process
-from src.values.types.number import Number
+from src.values.types.number import Number, Int, Float
 from src.values.types.string import String
 from src.values.types.list import List
 from src.values.types.dict import Dict
+from src.values.types.boolean import Boolean
 from src.values.types.module import Module
 from src.run.runtime import RTResult
 from src.run.context import Context
@@ -14,6 +15,7 @@ from src.main.symboltable import SymbolTable
 from src.error.message.rt import RTError
 from src.var.builtin import BUILTIN_MODULES
 from src.var.keyword import FILE_FORMAT
+from src.run.typecheck import check_type
 from src.var.token import (
     TT_MUL, TT_DIV,
     TT_PLUS, TT_MINUS,
@@ -33,8 +35,13 @@ class Interpreter:
         raise Exception(f"No visit_{type(node).__name__} method defined")
     
     def visit_NumberNode(self, node, context):
+        from src.var.token import TT_INT as _TT_INT
+        if node.tok.type == _TT_INT:
+            val = Int(node.tok.value)
+        else:
+            val = Float(node.tok.value)
         return RTResult().success(
-            Number(node.tok.value).set_context(context).set_pos(node.pos_start, node.pos_end)
+            val.set_context(context).set_pos(node.pos_start, node.pos_end)
         )
     
     def visit_StringNode(self, node, context):
@@ -99,6 +106,18 @@ class Interpreter:
         value = res.register(self.visit(node.value_node, context))
         if res.should_return(): return res
 
+        if not runtime_flags.notypes and node.type_annotation is None:
+            return res.failure(RTError(
+                node.pos_start, node.pos_end,
+                f"Variable '{var_name}' has no type annotation. Use @use notypes to disable.",
+                context
+            ))
+
+        if node.type_annotation:
+            err = check_type(value, node.type_annotation, context, node.pos_start, node.pos_end)
+            if err:
+                return res.failure(err)
+
         context.symbol_table.set(var_name, value)
         return res.success(value)
 
@@ -154,7 +173,7 @@ class Interpreter:
         elif node.op_tok.matches(TT_KEYWORD, "isnt"):
             number, error = number.notted()
         elif node.op_tok.matches(TT_KEYWORD, "is"):
-            number = Number(1 if number.is_true() else 0).set_context(number.context)
+            number = Boolean(number.is_true()).set_context(number.context)
 
         if error:
             return res.failure(error)
@@ -257,7 +276,37 @@ class Interpreter:
         func_name = node.var_name_tok.value if node.var_name_tok else None
         body_node = node.body_node
         arg_names = [arg_name.value for arg_name in node.arg_name_toks]
-        func_value = Function.Function(func_name, body_node, arg_names, node.should_auto_return).set_context(context).set_pos(node.pos_start, node.pos_end)
+
+        if not runtime_flags.notypes:
+            label = f"'{func_name}'" if func_name else "anonymous function"
+            if node.return_type is None:
+                return res.failure(RTError(
+                    node.pos_start, node.pos_end,
+                    f"Function {label} is missing a return type annotation. Use @use notypes to disable.",
+                    context
+                ))
+            for arg_tok, arg_type in zip(node.arg_name_toks, node.arg_types):
+                if arg_type is None:
+                    return res.failure(RTError(
+                        arg_tok.pos_start, arg_tok.pos_end,
+                        f"Argument '{arg_tok.value}' in function {label} is missing a type annotation.",
+                        context
+                    ))
+
+        arg_defaults = []
+        for default_node in node.arg_defaults:
+            if default_node is not None:
+                default_val = res.register(self.visit(default_node, context))
+                if res.should_return(): return res
+                arg_defaults.append(default_val)
+            else:
+                arg_defaults.append(None)
+
+        func_value = Function.Function(
+            func_name, body_node, arg_names, node.should_auto_return,
+            return_type=node.return_type, arg_types=node.arg_types,
+            arg_defaults=arg_defaults
+        ).set_context(context).set_pos(node.pos_start, node.pos_end)
         
         if node.var_name_tok:
             context.symbol_table.set(func_name, func_value)
@@ -267,6 +316,7 @@ class Interpreter:
     def visit_CallNode(self, node, context):
         res = RTResult()
         args = []
+        kwargs = {}
 
         value_to_call = res.register(self.visit(node.node_to_call, context))
         if res.should_return(): return res
@@ -276,7 +326,15 @@ class Interpreter:
             args.append(res.register(self.visit(arg_node, context)))
             if res.should_return(): return res
 
-        return_value = res.register(value_to_call.execute(args))
+        for kw_name, kw_node in node.kwarg_nodes.items():
+            kwargs[kw_name] = res.register(self.visit(kw_node, context))
+            if res.should_return(): return res
+
+        import src.values.function.function as FuncModule
+        if isinstance(value_to_call, FuncModule.Function):
+            return_value = res.register(value_to_call.execute(args, kwargs))
+        else:
+            return_value = res.register(value_to_call.execute(args))
         if res.should_return(): return res
         return_value = return_value.copy().set_pos(node.pos_start, node.pos_end).set_context(context)
         return res.success(return_value)
@@ -286,7 +344,6 @@ class Interpreter:
         module_path = node.module_path_tok.value
         alias = node.alias_tok.value
 
-        # --- Built-in stdlib (omi/* namespace) ---
         if module_path in BUILTIN_MODULES:
             module_value = BUILTIN_MODULES[module_path]()
             module_value.set_context(context).set_pos(node.pos_start, node.pos_end)
@@ -300,7 +357,6 @@ class Interpreter:
                 context
             ))
 
-        # --- User file import ---
         current_fn = node.pos_start.fn
         if current_fn and current_fn != "<stdin>":
             base_dir = os.path.dirname(os.path.abspath(current_fn))
@@ -354,7 +410,6 @@ class Interpreter:
                 context
             ))
 
-        # Require @use module declaration
         stmts = ast.node.element_nodes if hasattr(ast.node, 'element_nodes') else []
         has_module_decl = any(
             isinstance(s, UseDirectiveNode) and s.directive.lower() == 'module'
@@ -459,7 +514,13 @@ class Interpreter:
             runtime_flags.noecho = True
         elif directive == 'eval':
             runtime_flags.eval_enabled = True
-        # 'module' is a file-level declaration checked at import time; no-op at runtime
+        elif directive == 'notypes':
+            runtime_flags.notypes = True
+        return RTResult().success(Number.null)
+
+    def visit_TypeAliasNode(self, node, context):
+        alias_name = node.name_tok.value
+        context.symbol_table.set(f"__type_{alias_name}__", node.type_annotation)
         return RTResult().success(Number.null)
 
     def visit_SetDirectiveNode(self, node, context):

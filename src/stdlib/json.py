@@ -3,6 +3,7 @@ import os as _os
 
 from src.values.types.number import Number
 from src.values.types.string import String
+from src.values.types.boolean import Boolean
 from src.values.types.module import Module
 from src.values.function.stdlib import StdlibFunction
 from src.values.convert import python_to_omi, omi_to_python
@@ -24,9 +25,6 @@ class JsonBuiltInFunction(StdlibFunction):
     def __repr__(self):
         return f"<built-in function json.{self.name}>"
 
-    # -----------------------------------------------------------------
-    # json.parse(text) -> Dict / List / Number / String
-    # -----------------------------------------------------------------
     def execute_parse(self, exec_ctx):
         text = exec_ctx.symbol_table.get("text")
         if not isinstance(text, String):
@@ -46,9 +44,6 @@ class JsonBuiltInFunction(StdlibFunction):
             ))
     execute_parse.arg_names = ["text"]
 
-    # -----------------------------------------------------------------
-    # json.stringify(value[, indent]) -> String
-    # -----------------------------------------------------------------
     def execute_stringify(self, exec_ctx):
         value = exec_ctx.symbol_table.get("value")
         indent_val = exec_ctx.symbol_table.get("indent")
@@ -66,9 +61,6 @@ class JsonBuiltInFunction(StdlibFunction):
     execute_stringify.opt_names = ["indent"]
     execute_stringify.opt_defaults = [Number(0)]
 
-    # -----------------------------------------------------------------
-    # json.read(path) -> Dict / List / ...
-    # -----------------------------------------------------------------
     def execute_read(self, exec_ctx):
         path_val = exec_ctx.symbol_table.get("path")
         if not isinstance(path_val, String):
@@ -102,9 +94,6 @@ class JsonBuiltInFunction(StdlibFunction):
             ))
     execute_read.arg_names = ["path"]
 
-    # -----------------------------------------------------------------
-    # json.write(path, value[, indent]) -> null
-    # -----------------------------------------------------------------
     def execute_write(self, exec_ctx):
         path_val  = exec_ctx.symbol_table.get("path")
         value     = exec_ctx.symbol_table.get("value")
@@ -131,11 +120,6 @@ class JsonBuiltInFunction(StdlibFunction):
     execute_write.opt_names = ["indent"]
     execute_write.opt_defaults = [Number(0)]
 
-    # -----------------------------------------------------------------
-    # json.append(path, value) -> null
-    # Read existing JSON array, append value, write back.
-    # If the file does not exist, creates a new array.
-    # -----------------------------------------------------------------
     def execute_append(self, exec_ctx):
         path_val = exec_ctx.symbol_table.get("path")
         value    = exec_ctx.symbol_table.get("value")
@@ -170,9 +154,6 @@ class JsonBuiltInFunction(StdlibFunction):
             ))
     execute_append.arg_names = ["path", "value"]
 
-    # -----------------------------------------------------------------
-    # json.exists(path) -> true / false
-    # -----------------------------------------------------------------
     def execute_exists(self, exec_ctx):
         path_val = exec_ctx.symbol_table.get("path")
         if not isinstance(path_val, String):
@@ -182,7 +163,7 @@ class JsonBuiltInFunction(StdlibFunction):
                 exec_ctx,
             ))
         return RTResult().success(
-            Number.true if _os.path.isfile(path_val.value) else Number.false
+            Boolean.true if _os.path.isfile(path_val.value) else Boolean.false
         )
     execute_exists.arg_names = ["path"]
 
