@@ -106,9 +106,22 @@ class Number(Value):
 
     def __repr__(self):
         return str(self.value)
-    
+
+
+class Boolean(Number):
+    """Wraps Number(0/1) but displays as 'false'/'true'."""
+    def __repr__(self):
+        return "true" if self.value else "false"
+
+    def copy(self):
+        copy = Boolean(self.value)
+        copy.set_pos(self.pos_start, self.pos_end)
+        copy.set_context(self.context)
+        return copy
+
+
 Number.null = Number(0)
-Number.false = Number(0)
-Number.true = Number(1)
+Number.false = Boolean(0)
+Number.true = Boolean(1)
 Number.math_PI = Number(math.pi)
 Number.math_E = Number(math.e)

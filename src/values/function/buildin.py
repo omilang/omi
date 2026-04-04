@@ -4,6 +4,7 @@ import src.var.flags as flags
 from src.values.types.number import Number
 from src.values.types.string import String
 from src.values.types.list import List
+from src.values.types.dict import Dict
 from src.run.runtime import RTResult
 from src.error.message.rt import RTError
 from src.values.function.base import BaseFunction
@@ -84,6 +85,12 @@ class BuiltInFunction(BaseFunction):
     is_number = isinstance(exec_ctx.symbol_table.get("value"), List)
     return RTResult().success(Number.true if is_number else Number.false)
   execute_is_list.arg_names = ["value"]
+
+  def execute_is_dict(self, exec_ctx):
+    return RTResult().success(
+      Number.true if isinstance(exec_ctx.symbol_table.get("value"), Dict) else Number.false
+    )
+  execute_is_dict.arg_names = ["value"]
 
   def execute_is_function(self, exec_ctx):
     is_number = isinstance(exec_ctx.symbol_table.get("value"), BaseFunction)

@@ -5,5 +5,6 @@ eval_enabled = False
 VALID_DIRECTIVES = {
     "debug",
     "noecho",
-    "eval"
+    "eval",
+    "module",
 }

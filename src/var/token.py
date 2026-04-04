@@ -14,6 +14,8 @@ TT_LPAREN = "LPAREN"
 TT_RPAREN = "RPAREN"
 TT_LSQUARE = "LSQUARE"
 TT_RSQUARE = "RSQUARE"
+TT_LBRACE = "LBRACE"
+TT_RBRACE = "RBRACE"
 
 TT_E0F = "E0F"
 
@@ -56,6 +58,8 @@ TOKEN_DISPLAY_NAMES = {
     TT_RPAREN: "')'",
     TT_LSQUARE: "'['",
     TT_RSQUARE: "']'",
+    TT_LBRACE: "'{'",
+    TT_RBRACE: "'}'",
     TT_COMMA: "','",
     TT_COLON: "':'",
     TT_DOT: "'.'",

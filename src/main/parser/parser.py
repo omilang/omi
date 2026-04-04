@@ -5,6 +5,7 @@ from src.var.token import (
     TT_PLUS, TT_MINUS,
     TT_LPAREN, TT_RPAREN,
     TT_LSQUARE, TT_RSQUARE,
+    TT_LBRACE, TT_RBRACE,
     TT_E0F,
     TT_KEYWORD, TT_IDENTIFIER, TT_EQ,
     TT_EE, TT_NE, TT_LT, TT_GT,
@@ -29,6 +30,7 @@ from src.nodes.function.call import CallNode
 from src.nodes.types.string import StringNode
 from src.nodes.types.fstring import FStringNode
 from src.nodes.types.list import ListNode
+from src.nodes.types.dict import DictNode
 from src.nodes.jump.breakN import BreakNode
 from src.nodes.jump.returnN import ReturnNode
 from src.nodes.jump.continueN import ContinueNode
@@ -130,6 +132,90 @@ class Parser:
 
         return res.success(ListNode(
             element_nodes,
+            pos_start,
+            self.current_tok.pos_end.copy()
+        ))
+
+    def dict_expr(self):
+        res = ParseResult()
+        pair_nodes = []
+        pos_start = self.current_tok.pos_start.copy()
+
+        if self.current_tok.type != TT_LBRACE:
+            return res.failure(InvalidSyntaxError(
+                self.current_tok.pos_start, self.current_tok.pos_end,
+                "Expected '{'"
+            ))
+
+        res.register_advancement()
+        self.advance()
+
+        # skip leading newlines
+        while self.current_tok.type == TT_NEWLINE:
+            res.register_advancement()
+            self.advance()
+
+        if self.current_tok.type != TT_RBRACE:
+            # first pair
+            key = res.register(self.expr())
+            if res.error: return res
+
+            if self.current_tok.type != TT_COLON:
+                return res.failure(InvalidSyntaxError(
+                    self.current_tok.pos_start, self.current_tok.pos_end,
+                    "Expected ':' after dict key"
+                ))
+            res.register_advancement()
+            self.advance()
+
+            value = res.register(self.expr())
+            if res.error: return res
+            pair_nodes.append((key, value))
+
+            while self.current_tok.type == TT_COMMA:
+                res.register_advancement()
+                self.advance()
+
+                # skip newlines after comma
+                while self.current_tok.type == TT_NEWLINE:
+                    res.register_advancement()
+                    self.advance()
+
+                # trailing comma allowed
+                if self.current_tok.type == TT_RBRACE:
+                    break
+
+                key = res.register(self.expr())
+                if res.error: return res
+
+                if self.current_tok.type != TT_COLON:
+                    return res.failure(InvalidSyntaxError(
+                        self.current_tok.pos_start, self.current_tok.pos_end,
+                        "Expected ':' after dict key"
+                    ))
+                res.register_advancement()
+                self.advance()
+
+                value = res.register(self.expr())
+                if res.error: return res
+                pair_nodes.append((key, value))
+
+            # skip trailing newlines before }
+            while self.current_tok.type == TT_NEWLINE:
+                res.register_advancement()
+                self.advance()
+
+            if self.current_tok.type != TT_RBRACE:
+                return res.failure(InvalidSyntaxError(
+                    self.current_tok.pos_start, self.current_tok.pos_end,
+                    "Expected ',' or '}'"
+                ))
+
+        res.register_advancement()
+        self.advance()
+
+        return res.success(DictNode(
+            pair_nodes,
             pos_start,
             self.current_tok.pos_end.copy()
         ))
@@ -421,6 +507,11 @@ class Parser:
             if res.error: return res
             return res.success(list_expr)
 
+        elif tok.type == TT_LBRACE:
+            dict_expr = res.register(self.dict_expr())
+            if res.error: return res
+            return res.success(dict_expr)
+
         elif tok.matches(TT_KEYWORD, "if"):
             if_expr = res.register(self.if_expr())
             if res.error: return res
@@ -443,7 +534,7 @@ class Parser:
 
         return res.failure(InvalidSyntaxError(
             tok.pos_start, tok.pos_end,
-            f"Unexpected {self.describe_token(tok)}. Expected a value, identifier, '(', '[', 'if', 'for', 'while' or 'func'."
+            f"Unexpected {self.describe_token(tok)}. Expected a value, identifier, '(', '[', '{{', 'if', 'for', 'while' or 'func'."
         ))
 
     def parse_fstring(self, tok):

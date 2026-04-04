@@ -66,6 +66,12 @@ class Lexer():
             elif self.current_char == "]":
                 tokens.append(Token(TT_RSQUARE, pos_start=self.pos))
                 self.advance()
+            elif self.current_char == "{":
+                tokens.append(Token(TT_LBRACE, pos_start=self.pos))
+                self.advance()
+            elif self.current_char == "}":
+                tokens.append(Token(TT_RBRACE, pos_start=self.pos))
+                self.advance()
 
             elif self.current_char == "!":
                 tok, error = self.make_not_equals()
@@ -132,12 +138,17 @@ class Lexer():
 
         escape_characters = {
             "n": "\n",
-            "t": "\t"
+            "t": "\t",
+            "~": "\x00TILDE\x00",  # placeholder; handled below
         }
 
         while self.current_char != None and (self.current_char != '"' or escape_character):
             if escape_character:
-                string += escape_characters.get(self.current_char, self.current_char)
+                if self.current_char == "~":
+                    # \~ → literal tilde, NOT an interpolation marker
+                    string += "\x00TILDE\x00"
+                else:
+                    string += escape_characters.get(self.current_char, self.current_char)
                 escape_character = False
             elif self.current_char == "\\":
                 escape_character = True

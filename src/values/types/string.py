@@ -28,7 +28,7 @@ class String(Value):
 		return copy
 
 	def __str__(self):
-		return self.value
+		return self.value.replace("\x00TILDE\x00", "~")
 
 	def __repr__(self):
-		return f'"{self.value}"'
+		return f'"{self.value.replace(chr(0) + "TILDE" + chr(0), "~")}"'

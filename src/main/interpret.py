@@ -1,9 +1,11 @@
 import os
 import src.values.function.function as Function
 import src.var.flags as runtime_flags
+from src.preprocessor import process
 from src.values.types.number import Number
 from src.values.types.string import String
 from src.values.types.list import List
+from src.values.types.dict import Dict
 from src.values.types.module import Module
 from src.run.runtime import RTResult
 from src.run.context import Context
@@ -50,6 +52,30 @@ class Interpreter:
 
         return res.success(
             List(elements).set_context(context).set_pos(node.pos_start, node.pos_end)
+        )
+
+    def visit_DictNode(self, node, context):
+        res = RTResult()
+        entries = {}
+
+        for key_node, value_node in node.pair_nodes:
+            key_val = res.register(self.visit(key_node, context))
+            if res.should_return(): return res
+
+            if not isinstance(key_val, String):
+                return res.failure(RTError(
+                    key_node.pos_start, key_node.pos_end,
+                    "Dict keys must be strings",
+                    context,
+                ))
+
+            value_val = res.register(self.visit(value_node, context))
+            if res.should_return(): return res
+
+            entries[key_val.value] = value_val
+
+        return res.success(
+            Dict(entries).set_context(context).set_pos(node.pos_start, node.pos_end)
         )
 
     def visit_VarAccessNode(self, node, context):
@@ -260,12 +286,21 @@ class Interpreter:
         module_path = node.module_path_tok.value
         alias = node.alias_tok.value
 
+        # --- Built-in stdlib (omi/* namespace) ---
         if module_path in BUILTIN_MODULES:
             module_value = BUILTIN_MODULES[module_path]()
             module_value.set_context(context).set_pos(node.pos_start, node.pos_end)
             context.symbol_table.set(alias, module_value)
             return res.success(Number.null)
 
+        if module_path.startswith("omi/"):
+            return res.failure(RTError(
+                node.pos_start, node.pos_end,
+                f"Unknown standard library module 'omi/{module_path[4:]}'",
+                context
+            ))
+
+        # --- User file import ---
         current_fn = node.pos_start.fn
         if current_fn and current_fn != "<stdin>":
             base_dir = os.path.dirname(os.path.abspath(current_fn))
@@ -297,8 +332,11 @@ class Interpreter:
 
         from src.main.lexer import Lexer
         from src.main.parser.parser import Parser
+        from src.nodes.directives.useN import UseDirectiveNode
 
-        lexer = Lexer(module_file, script)
+        clean_script = process(script)
+
+        lexer = Lexer(module_file, clean_script)
         tokens, error = lexer.make_tokens()
         if error:
             return res.failure(RTError(
@@ -313,6 +351,19 @@ class Interpreter:
             return res.failure(RTError(
                 node.pos_start, node.pos_end,
                 f"Error in module '{module_path}':\n" + ast.error.as_string(),
+                context
+            ))
+
+        # Require @use module declaration
+        stmts = ast.node.element_nodes if hasattr(ast.node, 'element_nodes') else []
+        has_module_decl = any(
+            isinstance(s, UseDirectiveNode) and s.directive.lower() == 'module'
+            for s in stmts
+        )
+        if not has_module_decl:
+            return res.failure(RTError(
+                node.pos_start, node.pos_end,
+                f"Cannot import '{module_path}': file does not declare '@use module'",
                 context
             ))
 
@@ -334,10 +385,10 @@ class Interpreter:
         module_value = res.register(self.visit(node.module_node, context))
         if res.should_return(): return res
 
-        if not isinstance(module_value, Module):
+        if not hasattr(module_value, 'get_member'):
             return res.failure(RTError(
                 node.pos_start, node.pos_end,
-                "Cannot access member of non-module value",
+                "Cannot use '.' on this value (not a module or dict)",
                 context
             ))
 
@@ -408,6 +459,7 @@ class Interpreter:
             runtime_flags.noecho = True
         elif directive == 'eval':
             runtime_flags.eval_enabled = True
+        # 'module' is a file-level declaration checked at import time; no-op at runtime
         return RTResult().success(Number.null)
 
     def visit_SetDirectiveNode(self, node, context):
