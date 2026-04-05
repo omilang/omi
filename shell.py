@@ -3,10 +3,19 @@ import sys
 from src.run.run import run
 from src.run.source import read_source_file
 from src.var.keyword import FILE_FORMAT
+from src.var.constant import VERSION, HELP_TEXT
 
-debug = "--debug" in sys.argv
+debug = ("--debug" in sys.argv) or ("-d" in sys.argv)
 
-_args = [a for a in sys.argv[1:] if not a.startswith("--")]
+if ("--version" in sys.argv) or ("-v" in sys.argv):
+    print(f"Omi {VERSION}")
+    sys.exit(0)
+
+if ("--help" in sys.argv) or ("-h" in sys.argv):
+    print(HELP_TEXT, end="")
+    sys.exit(0)
+
+_args = [a for a in sys.argv[1:] if not a.startswith("-")]
 if len(_args) >= 2 and _args[0] == "run":
     fn = _args[1]
     _, file_extension = os.path.splitext(fn)

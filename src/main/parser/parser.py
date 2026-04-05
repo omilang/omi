@@ -131,6 +131,90 @@ class Parser:
 
         return res.success(TypeAnnotationNode(type_parts, pos_start, pos_end))
 
+    def parse_array_type_annotation(self):
+        res = ParseResult()
+        pos_start = self.current_tok.pos_start.copy()
+
+        res.register_advancement()
+        self.advance()
+
+        type_parts = []
+        part = self._parse_single_type()
+        if part is None:
+            return res.failure(InvalidSyntaxError(
+                self.current_tok.pos_start, self.current_tok.pos_end,
+                "Expected type name or string literal inside '[...]'"
+            ))
+        type_parts.append(part)
+
+        while self.current_tok.type == TT_PIPE:
+            res.register_advancement()
+            self.advance()
+            part = self._parse_single_type()
+            if part is None:
+                return res.failure(InvalidSyntaxError(
+                    self.current_tok.pos_start, self.current_tok.pos_end,
+                    "Expected type name or string literal after '|'"
+                ))
+            type_parts.append(part)
+
+        if self.current_tok.type != TT_RSQUARE:
+            return res.failure(InvalidSyntaxError(
+                self.current_tok.pos_start, self.current_tok.pos_end,
+                "Expected ']' to close array type annotation"
+            ))
+
+        pos_end = self.current_tok.pos_end.copy()
+        res.register_advancement()
+        self.advance()
+
+        return res.success(TypeAnnotationNode(["array"], pos_start, pos_end, array_elem_types=type_parts))
+
+    def _try_parse_size_constraint(self, type_ann, res):
+        if self.current_tok.type != TT_LPAREN:
+            return type_ann
+
+        is_array_ann = (
+            (type_ann.array_elem_types is not None) or
+            ("array" in type_ann.type_parts)
+        )
+        if not is_array_ann:
+            return res.failure(InvalidSyntaxError(
+                self.current_tok.pos_start, self.current_tok.pos_end,
+                "Size constraint (...) is only allowed for array type annotations"
+            ))
+
+        res.register_advancement()
+        self.advance()
+
+        if self.current_tok.type != TT_INT:
+            return res.failure(InvalidSyntaxError(
+                self.current_tok.pos_start, self.current_tok.pos_end,
+                "Expected a positive integer for array size constraint"
+            ))
+
+        size_val = self.current_tok.value
+        if not isinstance(size_val, int) or size_val <= 0:
+            return res.failure(InvalidSyntaxError(
+                self.current_tok.pos_start, self.current_tok.pos_end,
+                "Array size must be a positive integer"
+            ))
+
+        res.register_advancement()
+        self.advance()
+
+        if self.current_tok.type != TT_RPAREN:
+            return res.failure(InvalidSyntaxError(
+                self.current_tok.pos_start, self.current_tok.pos_end,
+                "Expected ')' after array size"
+            ))
+
+        res.register_advancement()
+        self.advance()
+
+        type_ann.max_size = size_val
+        return type_ann
+
     def _parse_single_type(self):
         tok = self.current_tok
         if tok.type in (TT_IDENTIFIER, TT_KEYWORD):
@@ -290,6 +374,14 @@ class Parser:
         else_case = None
 
         if self.current_tok.matches(TT_KEYWORD, "else"):
+            res.register_advancement()
+            self.advance()
+
+            if self.current_tok.type != TT_COLON:
+                return res.failure(InvalidSyntaxError(
+                    self.current_tok.pos_start, self.current_tok.pos_end,
+                    "Expected ':' after 'else'"
+                ))
             res.register_advancement()
             self.advance()
 
@@ -994,28 +1086,53 @@ class Parser:
             if self.current_tok.type == TT_LT:
                 type_ann = res.register(self.parse_type_annotation())
                 if res.error: return res
+                size_result = self._try_parse_size_constraint(type_ann, res)
+                if isinstance(size_result, ParseResult):
+                    return size_result
+                type_ann = size_result
+            elif self.current_tok.type == TT_LSQUARE:
+                type_ann = res.register(self.parse_array_type_annotation())
+                if res.error: return res
+                size_result = self._try_parse_size_constraint(type_ann, res)
+                if isinstance(size_result, ParseResult):
+                    return size_result
+                type_ann = size_result
 
             if self.current_tok.type != TT_IDENTIFIER:
                 return res.failure(InvalidSyntaxError(
                     self.current_tok.pos_start, self.current_tok.pos_end,
                     "Expected variable name after 'var'"
                 ))
-            
+
             var_name = self.current_tok
             res.register_advancement()
             self.advance()
 
             if self.current_tok.type != TT_EQ:
-                return res.failure(InvalidSyntaxError(
-                    self.current_tok.pos_start, self.current_tok.pos_end,
-                    "Expected '=' after variable name"
-                ))
-            
+                if type_ann is None:
+                    return res.failure(InvalidSyntaxError(
+                        self.current_tok.pos_start, self.current_tok.pos_end,
+                        "Expected '=' after variable name (or add a type annotation to declare without value)"
+                    ))
+                return res.success(VarAssignNode(var_name, None, type_ann))
+
             res.register_advancement()
             self.advance()
             expr = res.register(self.expr())
             if res.error: return res
             return res.success(VarAssignNode(var_name, expr, type_ann))
+
+        if self.current_tok.type == TT_IDENTIFIER:
+            next_idx = self.tok_idx + 1
+            if next_idx < len(self.tokens) and self.tokens[next_idx].type == TT_EQ:
+                var_name = self.current_tok
+                res.register_advancement()
+                self.advance()
+                res.register_advancement()
+                self.advance()
+                expr = res.register(self.expr())
+                if res.error: return res
+                return res.success(VarAssignNode(var_name, expr, None, is_reassign=True))
 
         node = res.register(self.bin_op(self.comp_expr, ((TT_KEYWORD, "and"), (TT_KEYWORD, "or"))))
 

@@ -94,9 +94,9 @@ class BuiltInFunction(BaseFunction):
     return RTResult().success(Boolean(isinstance(exec_ctx.symbol_table.get("value"), String)))
   execute_is_string.arg_names = ["value"]
 
-  def execute_is_list(self, exec_ctx):
+  def execute_is_array(self, exec_ctx):
     return RTResult().success(Boolean(isinstance(exec_ctx.symbol_table.get("value"), List)))
-  execute_is_list.arg_names = ["value"]
+  execute_is_array.arg_names = ["value"]
 
   def execute_is_dict(self, exec_ctx):
     return RTResult().success(Boolean(isinstance(exec_ctx.symbol_table.get("value"), Dict)))
@@ -113,9 +113,22 @@ class BuiltInFunction(BaseFunction):
     if not isinstance(list_, List):
       return RTResult().failure(RTError(
         self.pos_start, self.pos_end,
-        "First argument must be list",
+        "First argument must be array",
         exec_ctx
       ))
+
+    if list_.max_size is not None and len(list_.elements) >= list_.max_size:
+      return RTResult().failure(RTError(
+        self.pos_start, self.pos_end,
+        f"Array exceeds maximum size of {list_.max_size}",
+        exec_ctx
+      ))
+
+    if list_.elem_annotation is not None:
+      from src.run.typecheck import check_type
+      err = check_type(value, list_.elem_annotation, exec_ctx, self.pos_start, self.pos_end)
+      if err:
+        return RTResult().failure(err)
 
     list_.elements.append(value)
     return RTResult().success(Number.null)
@@ -128,7 +141,7 @@ class BuiltInFunction(BaseFunction):
     if not isinstance(list_, List):
       return RTResult().failure(RTError(
         self.pos_start, self.pos_end,
-        "First argument must be list",
+        "First argument must be array",
         exec_ctx
       ))
 
@@ -157,16 +170,35 @@ class BuiltInFunction(BaseFunction):
     if not isinstance(listA, List):
       return RTResult().failure(RTError(
         self.pos_start, self.pos_end,
-        "First argument must be list",
+        "First argument must be array",
         exec_ctx
       ))
 
     if not isinstance(listB, List):
       return RTResult().failure(RTError(
         self.pos_start, self.pos_end,
-        "Second argument must be list",
+        "Second argument must be array",
         exec_ctx
       ))
+
+    if listA.max_size is not None:
+      if len(listA.elements) + len(listB.elements) > listA.max_size:
+        return RTResult().failure(RTError(
+          self.pos_start, self.pos_end,
+          f"Array exceeds maximum size of {listA.max_size}",
+          exec_ctx
+        ))
+
+    if listA.elem_annotation is not None:
+      from src.run.typecheck import check_type
+      for i, elem in enumerate(listB.elements):
+        err = check_type(elem, listA.elem_annotation, exec_ctx, self.pos_start, self.pos_end)
+        if err:
+          return RTResult().failure(RTError(
+            self.pos_start, self.pos_end,
+            f"Element at index {i} in second array: {err.details}",
+            exec_ctx
+          ))
 
     listA.elements.extend(listB.elements)
     return RTResult().success(Number.null)
@@ -178,7 +210,7 @@ class BuiltInFunction(BaseFunction):
       if not isinstance(list_, List):
         return RTResult().failure(RTError(
           self.pos_start, self.pos_end,
-          "Argument must be list",
+          "Argument must be array",
           exec_ctx
         ))
 
@@ -218,3 +250,118 @@ class BuiltInFunction(BaseFunction):
     from src.values.types.null import Null
     return RTResult().success(Boolean(isinstance(exec_ctx.symbol_table.get("value"), Null)))
   execute_is_null.arg_names = ["value"]
+
+  def execute_typeof(self, exec_ctx):
+    from src.values.types.number import Int, Float
+    from src.values.types.null import Null
+    from src.values.types.void import Void
+    value = exec_ctx.symbol_table.get("value")
+    if isinstance(value, Boolean):
+      type_str = "bool"
+    elif isinstance(value, Void):
+      type_str = "void"
+    elif isinstance(value, Null):
+      type_str = "null"
+    elif isinstance(value, Int):
+      type_str = "int"
+    elif isinstance(value, Float):
+      type_str = "float"
+    elif isinstance(value, String):
+      type_str = "string"
+    elif isinstance(value, List):
+      type_str = "array"
+    elif isinstance(value, Dict):
+      type_str = "dict"
+    elif isinstance(value, BaseFunction):
+      type_str = "call"
+    else:
+      type_str = type(value).__name__.lower()
+    return RTResult().success(String(type_str))
+  execute_typeof.arg_names = ["value"]
+
+  def execute_to_string(self, exec_ctx):
+    value = exec_ctx.symbol_table.get("value")
+    return RTResult().success(String(str(value)))
+  execute_to_string.arg_names = ["value"]
+
+  def execute_to_int(self, exec_ctx):
+    from src.values.types.number import Int, Float
+    value = exec_ctx.symbol_table.get("value")
+    if isinstance(value, Int):
+      return RTResult().success(value)
+    if isinstance(value, Float):
+      return RTResult().success(Int(int(value.value)))
+    if isinstance(value, Boolean):
+      return RTResult().success(Int(1 if value.value else 0))
+    if isinstance(value, String):
+      try:
+        return RTResult().success(Int(int(value.value)))
+      except ValueError:
+        return RTResult().failure(RTError(
+          self.pos_start, self.pos_end,
+          f'Cannot convert string "{value.value}" to int',
+          exec_ctx
+        ))
+    return RTResult().failure(RTError(
+      self.pos_start, self.pos_end,
+      f"Cannot convert {type(value).__name__.lower()} to int",
+      exec_ctx
+    ))
+  execute_to_int.arg_names = ["value"]
+
+  def execute_to_float(self, exec_ctx):
+    from src.values.types.number import Int, Float
+    value = exec_ctx.symbol_table.get("value")
+    if isinstance(value, Float):
+      return RTResult().success(value)
+    if isinstance(value, Int):
+      return RTResult().success(Float(float(value.value)))
+    if isinstance(value, Boolean):
+      return RTResult().success(Float(1.0 if value.value else 0.0))
+    if isinstance(value, String):
+      try:
+        return RTResult().success(Float(float(value.value)))
+      except ValueError:
+        return RTResult().failure(RTError(
+          self.pos_start, self.pos_end,
+          f'Cannot convert string "{value.value}" to float',
+          exec_ctx
+        ))
+    return RTResult().failure(RTError(
+      self.pos_start, self.pos_end,
+      f"Cannot convert {type(value).__name__.lower()} to float",
+      exec_ctx
+    ))
+  execute_to_float.arg_names = ["value"]
+
+  def execute_to_bool(self, exec_ctx):
+    from src.values.types.number import Int, Float
+    value = exec_ctx.symbol_table.get("value")
+    if isinstance(value, Boolean):
+      return RTResult().success(value)
+    if isinstance(value, (Int, Float)):
+      if value.value == 1 or value.value == 1.0:
+        return RTResult().success(Boolean.true)
+      if value.value == 0 or value.value == 0.0:
+        return RTResult().success(Boolean.false)
+      return RTResult().failure(RTError(
+        self.pos_start, self.pos_end,
+        f"Cannot convert number {value.value} to bool: only 0 and 1 are allowed",
+        exec_ctx
+      ))
+    if isinstance(value, String):
+      if value.value == "true":
+        return RTResult().success(Boolean.true)
+      if value.value == "false":
+        return RTResult().success(Boolean.false)
+      return RTResult().failure(RTError(
+        self.pos_start, self.pos_end,
+        f'Cannot convert string "{value.value}" to bool: only "true" and "false" are allowed',
+        exec_ctx
+      ))
+    return RTResult().failure(RTError(
+      self.pos_start, self.pos_end,
+      f"Cannot convert {type(value).__name__.lower()} to bool",
+      exec_ctx
+    ))
+  execute_to_bool.arg_names = ["value"]

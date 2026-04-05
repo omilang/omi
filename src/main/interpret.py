@@ -96,15 +96,73 @@ class Interpreter:
                 f"'{var_name}' is not defined",
                 context
             ))
-        
+
+        from src.values.types.void import Uninitialized
+        if isinstance(value, Uninitialized):
+            return res.failure(RTError(
+                node.pos_start, node.pos_end,
+                f"Variable '{var_name}' has no value assigned",
+                context
+            ))
+
         value = value.copy().set_pos(node.pos_start, node.pos_end).set_context(context)
         return res.success(value)
 
     def visit_VarAssignNode(self, node, context):
         res = RTResult()
         var_name = node.var_name_tok.value
+        from src.values.types.void import Uninitialized
+        from src.values.types.list import List
+        from src.nodes.types.typeannotation import TypeAnnotationNode
+
+        if node.value_node is None:
+            if node.type_annotation is None:
+                return res.failure(RTError(
+                    node.pos_start, node.pos_end,
+                    f"Variable '{var_name}' must have either a type annotation or a value",
+                    context
+                ))
+            if "void" in node.type_annotation.type_parts:
+                return res.failure(RTError(
+                    node.pos_start, node.pos_end,
+                    "Cannot use 'void' as a variable type",
+                    context
+                ))
+            uninit = Uninitialized(var_name, node.type_annotation)
+            context.symbol_table.set(var_name, uninit)
+            return res.success(uninit)
+
         value = res.register(self.visit(node.value_node, context))
         if res.should_return(): return res
+
+        if node.is_reassign:
+            existing = context.symbol_table.get(var_name)
+            if existing is None:
+                return res.failure(RTError(
+                    node.pos_start, node.pos_end,
+                    f"'{var_name}' is not defined",
+                    context
+                ))
+            if isinstance(existing, Uninitialized) and existing.annotation is not None:
+                ann = existing.annotation
+                if "void" in ann.type_parts:
+                    return res.failure(RTError(
+                        node.pos_start, node.pos_end,
+                        "Cannot assign a value to a 'void'-typed variable",
+                        context
+                    ))
+                err = check_type(value, ann, context, node.pos_start, node.pos_end)
+                if err:
+                    return res.failure(err)
+                if isinstance(value, List):
+                    if ann.array_elem_types is not None:
+                        value.elem_annotation = TypeAnnotationNode(
+                            ann.array_elem_types, ann.pos_start, ann.pos_end
+                        )
+                    if ann.max_size is not None:
+                        value.max_size = ann.max_size
+            context.symbol_table.set(var_name, value)
+            return res.success(value)
 
         if not runtime_flags.notypes and node.type_annotation is None:
             return res.failure(RTError(
@@ -114,9 +172,23 @@ class Interpreter:
             ))
 
         if node.type_annotation:
-            err = check_type(value, node.type_annotation, context, node.pos_start, node.pos_end)
+            ann = node.type_annotation
+            if "void" in ann.type_parts:
+                return res.failure(RTError(
+                    node.pos_start, node.pos_end,
+                    "Cannot use 'void' as a variable type",
+                    context
+                ))
+            err = check_type(value, ann, context, node.pos_start, node.pos_end)
             if err:
                 return res.failure(err)
+            if isinstance(value, List):
+                if ann.array_elem_types is not None:
+                    value.elem_annotation = TypeAnnotationNode(
+                        ann.array_elem_types, ann.pos_start, ann.pos_end
+                    )
+                if ann.max_size is not None:
+                    value.max_size = ann.max_size
 
         context.symbol_table.set(var_name, value)
         return res.success(value)
@@ -283,6 +355,12 @@ class Interpreter:
                 return res.failure(RTError(
                     node.pos_start, node.pos_end,
                     f"Function {label} is missing a return type annotation. Use @use notypes to disable.",
+                    context
+                ))
+            if node.should_auto_return and node.return_type and "void" in node.return_type.type_parts:
+                return res.failure(RTError(
+                    node.pos_start, node.pos_end,
+                    f"Arrow function {label} cannot have 'void' return type",
                     context
                 ))
             for arg_tok, arg_type in zip(node.arg_name_toks, node.arg_types):
@@ -457,13 +535,14 @@ class Interpreter:
 
     def visit_ReturnNode(self, node, context):
         res = RTResult()
+        from src.values.types.void import Void
 
         if node.node_to_return:
             value = res.register(self.visit(node.node_to_return, context))
             if res.should_return(): return res
         else:
-            value = Number.null
-        
+            value = Void.void
+
         return res.success_return(value)
 
     def visit_ContinueNode(self, node, context):

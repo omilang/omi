@@ -16,6 +16,8 @@ class Function(BaseFunction):
 		self.arg_defaults = arg_defaults or [None] * len(arg_names)
 
 	def execute(self, args, kwargs=None):
+		from src.values.types.void import Void
+		from src.error.message.rt import RTError
 		res = RTResult()
 		interpreter = Interpreter.Interpreter()
 		exec_ctx = self.generate_new_context()
@@ -38,13 +40,35 @@ class Function(BaseFunction):
 		value = res.register(interpreter.visit(self.body_node, exec_ctx))
 		if res.should_return() and res.func_return_value == None: return res
 
-		ret_value = (value if self.should_auto_return else None) or res.func_return_value or Number.null
+		ret_value = (value if self.should_auto_return else None) or res.func_return_value or Void.void
 
 		if self.return_type is not None:
-			err = check_type(ret_value, self.return_type, exec_ctx,
-			                 self.pos_start, self.pos_end)
-			if err:
-				return res.failure(err)
+			import src.var.flags as runtime_flags
+			if not runtime_flags.notypes:
+				ret_is_void = isinstance(ret_value, Void)
+				ann_wants_void = "void" in self.return_type.type_parts
+				ann_wants_null = "null" in self.return_type.type_parts
+
+				if ann_wants_void and not ret_is_void:
+					return res.failure(RTError(
+						self.pos_start, self.pos_end,
+						f"Function '{self.name}' declared void but returned a value. "
+						f"Use bare 'return' to return nothing.",
+						exec_ctx
+					))
+				if ann_wants_null and ret_is_void:
+					return res.failure(RTError(
+						self.pos_start, self.pos_end,
+						f"Function '{self.name}' declared <null> but got void return. "
+						f"Use 'return null' instead of bare 'return'.",
+						exec_ctx
+					))
+
+				if not ann_wants_void:
+					err = check_type(ret_value, self.return_type, exec_ctx,
+					                 self.pos_start, self.pos_end)
+					if err:
+						return res.failure(err)
 
 		return res.success(ret_value)
 
