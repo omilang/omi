@@ -498,38 +498,50 @@ class Parser:
         res.register_advancement()
         self.advance()
 
-        if self.current_tok.type != TT_EQ:
-            return res.failure(InvalidSyntaxError(
-                self.current_tok.pos_start, self.current_tok.pos_end,
-                f"Expected '='"
-            ))
-        
-        res.register_advancement()
-        self.advance()
+        # Two for-forms supported:
+        # 1) Numeric range: for i = start to end [step ...]:
+        # 2) Iterable:     for i to <iterable>:
+        start_value = None
+        step_value = None
 
-        start_value = res.register(self.expr())
-        if res.error: return res
-
-        if not self.current_tok.matches(TT_KEYWORD, "to"):
-            return res.failure(InvalidSyntaxError(
-                self.current_tok.pos_start, self.current_tok.pos_end,
-                f"Expected 'to'"
-            ))
-        
-        res.register_advancement()
-        self.advance()
-
-        end_value = res.register(self.expr())
-        if res.error: return res
-
-        if self.current_tok.matches(TT_KEYWORD, "step"):
+        if self.current_tok.type == TT_EQ:
+            # numeric form
             res.register_advancement()
             self.advance()
 
-            step_value = res.register(self.expr())
+            start_value = res.register(self.expr())
+            if res.error: return res
+
+            if not self.current_tok.matches(TT_KEYWORD, "to"):
+                return res.failure(InvalidSyntaxError(
+                    self.current_tok.pos_start, self.current_tok.pos_end,
+                    f"Expected 'to'"
+                ))
+            
+            res.register_advancement()
+            self.advance()
+
+            end_value = res.register(self.expr())
+            if res.error: return res
+
+            if self.current_tok.matches(TT_KEYWORD, "step"):
+                res.register_advancement()
+                self.advance()
+
+                step_value = res.register(self.expr())
+                if res.error: return res
+        elif self.current_tok.matches(TT_KEYWORD, "to"):
+            # iterable form: no start_value, end_value is the iterable
+            res.register_advancement()
+            self.advance()
+
+            end_value = res.register(self.expr())
             if res.error: return res
         else:
-            step_value = None
+            return res.failure(InvalidSyntaxError(
+                self.current_tok.pos_start, self.current_tok.pos_end,
+                f"Expected '=' for range form or 'to' for iterable form"
+            ))
 
         if self.current_tok.type != TT_COLON:
             return res.failure(InvalidSyntaxError(

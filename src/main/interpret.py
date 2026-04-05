@@ -275,7 +275,39 @@ class Interpreter:
     def visit_ForNode(self, node, context):
         res = RTResult()
         elements = []
+        # iterable form: if start_value_node is None, then end_value_node is iterable
+        if node.start_value_node is None:
+            iterable = res.register(self.visit(node.end_value_node, context))
+            if res.should_return(): return res
 
+            from src.values.types.list import List as ListValue
+            if not isinstance(iterable, ListValue):
+                return res.failure(RTError(
+                    node.pos_start, node.pos_end,
+                    "Can only iterate over lists",
+                    context
+                ))
+
+            for elem in iterable.elements:
+                context.symbol_table.set(node.var_name_tok.value, elem.copy().set_context(context))
+
+                value = res.register(self.visit(node.body_node, context))
+                if res.should_return() and res.loop_should_continue == False and res.loop_should_break == False: return res
+
+                if res.loop_should_continue:
+                    continue
+
+                if res.loop_should_break:
+                    break
+
+                elements.append(value)
+
+            return res.success(
+                Number.null if node.should_return_null else
+                List(elements).set_context(context).set_pos(node.pos_start, node.pos_end)
+            )
+
+        # numeric range form (existing behavior)
         start_value = res.register(self.visit(node.start_value_node, context))
         if res.should_return(): return res
 
