@@ -275,7 +275,6 @@ class Interpreter:
     def visit_ForNode(self, node, context):
         res = RTResult()
         elements = []
-        # iterable form: if start_value_node is None, then end_value_node is iterable
         if node.start_value_node is None:
             iterable = res.register(self.visit(node.end_value_node, context))
             if res.should_return(): return res
@@ -307,7 +306,6 @@ class Interpreter:
                 List(elements).set_context(context).set_pos(node.pos_start, node.pos_end)
             )
 
-        # numeric range form (existing behavior)
         start_value = res.register(self.visit(node.start_value_node, context))
         if res.should_return(): return res
 

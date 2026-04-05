@@ -498,14 +498,10 @@ class Parser:
         res.register_advancement()
         self.advance()
 
-        # Two for-forms supported:
-        # 1) Numeric range: for i = start to end [step ...]:
-        # 2) Iterable:     for i to <iterable>:
         start_value = None
         step_value = None
 
         if self.current_tok.type == TT_EQ:
-            # numeric form
             res.register_advancement()
             self.advance()
 
@@ -531,7 +527,6 @@ class Parser:
                 step_value = res.register(self.expr())
                 if res.error: return res
         elif self.current_tok.matches(TT_KEYWORD, "to"):
-            # iterable form: no start_value, end_value is the iterable
             res.register_advancement()
             self.advance()
 
