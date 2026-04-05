@@ -1,11 +1,9 @@
-// Вычисления факториал на Omi
-
-func factorial(n)
+func<int> factorial(n<int>):
   if n <= 1: return 1
   return n * factorial(n - 1)
 end
 
-// Факториал от 1 до 6
+// Factorial from 1 to 6
 for i = 1 to 6:
   print(factorial(i))
 end

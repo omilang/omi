@@ -1,4 +1,5 @@
 from src.var.token import *
+from src.var.constant import LETTERS
 from src.var.constant import *
 from src.var.keyword import KEYWORDS
 from src.tokens import Token
@@ -65,6 +66,12 @@ class Lexer():
             elif self.current_char == "]":
                 tokens.append(Token(TT_RSQUARE, pos_start=self.pos))
                 self.advance()
+            elif self.current_char == "{":
+                tokens.append(Token(TT_LBRACE, pos_start=self.pos))
+                self.advance()
+            elif self.current_char == "}":
+                tokens.append(Token(TT_RBRACE, pos_start=self.pos))
+                self.advance()
 
             elif self.current_char == "!":
                 tok, error = self.make_not_equals()
@@ -81,6 +88,9 @@ class Lexer():
             elif self.current_char == ",":
                 tokens.append(Token(TT_COMMA, pos_start=self.pos))
                 self.advance()
+            elif self.current_char == "|":
+                tokens.append(Token(TT_PIPE, pos_start=self.pos))
+                self.advance()
             elif self.current_char == ":":
                 tokens.append(Token(TT_COLON, pos_start=self.pos))
                 self.advance()
@@ -89,6 +99,9 @@ class Lexer():
                 self.advance()
             elif self.current_char == "@":
                 tokens.append(Token(TT_AT, pos_start=self.pos))
+                self.advance()
+            elif self.current_char == "~":
+                tokens.append(Token(TT_TILDE, pos_start=self.pos))
                 self.advance()
 
             else:
@@ -123,26 +136,34 @@ class Lexer():
         string = ""
         pos_start = self.pos.copy()
         escape_character = False
+        has_interp = False
         self.advance()
 
         escape_characters = {
             "n": "\n",
-            "t": "\t"
+            "t": "\t",
+            "~": "\x00TILDE\x00",
         }
 
         while self.current_char != None and (self.current_char != '"' or escape_character):
             if escape_character:
-                string += escape_characters.get(self.current_char, self.current_char)
-            else:
-                if self.current_char == "\\":
-                    escape_character = True
+                if self.current_char == "~":
+                    string += "\x00TILDE\x00"
                 else:
-                    string += self.current_char
+                    string += escape_characters.get(self.current_char, self.current_char)
+                escape_character = False
+            elif self.current_char == "\\":
+                escape_character = True
+            elif self.current_char == "~":
+                has_interp = True
+                string += self.current_char
+            else:
+                string += self.current_char
             self.advance()
-            escape_character = False
         
         self.advance()
-        return Token(TT_STRING, string, pos_start, self.pos)
+        tok_type = TT_FSTRING if has_interp else TT_STRING
+        return Token(tok_type, string, pos_start, self.pos)
 
     def make_identifier(self):
         id_str = ""

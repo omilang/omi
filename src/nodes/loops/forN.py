@@ -7,5 +7,7 @@ class ForNode:
         self.body_node = body_node
         self.should_return_null = should_return_null
 
+        self.is_iterable = (self.start_value_node is None)
+
         self.pos_start = self.var_name_tok.pos_start
         self.pos_end = self.body_node.pos_end

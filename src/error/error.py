@@ -1,5 +1,6 @@
 from src.arrow import arrow
 
+
 class Error:
     def __init__(self, pos_start, pos_end, error_name, details):
         self.pos_start = pos_start
@@ -9,6 +10,10 @@ class Error:
 
     def as_string(self):
         result = f"{self.error_name}: {self.details}"
-        result += f"\nFile {self.pos_start.fn}, line {self.pos_start.ln + 1}"
-        result += f"\n{arrow(self.pos_start.ftxt, self.pos_start, self.pos_end)}"
+        result += f"\nFile {self.pos_start.fn}, line {self.pos_start.ln + 1}, column {self.pos_start.col + 1}"
+
+        frame = arrow(self.pos_start.ftxt, self.pos_start, self.pos_end)
+        if frame:
+            result += f"\n{frame}"
+
         return result

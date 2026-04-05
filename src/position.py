@@ -12,7 +12,7 @@ class Position:
 
         if current_char == "\n":
             self.ln += 1
-            self.col += 0
+            self.col = 0
 
         return self
     

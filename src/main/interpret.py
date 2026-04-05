@@ -1,19 +1,21 @@
 import os
 import src.values.function.function as Function
-from src.values.types.number import Number
+import src.var.flags as runtime_flags
+from src.preprocessor import process
+from src.values.types.number import Number, Int, Float
 from src.values.types.string import String
 from src.values.types.list import List
+from src.values.types.dict import Dict
+from src.values.types.boolean import Boolean
 from src.values.types.module import Module
 from src.run.runtime import RTResult
 from src.run.context import Context
+from src.run.source import read_source_file
 from src.main.symboltable import SymbolTable
 from src.error.message.rt import RTError
+from src.var.builtin import BUILTIN_MODULES
 from src.var.keyword import FILE_FORMAT
-from src.stdlib.system import create_system_module
-from src.stdlib.files import create_files_module
-from src.stdlib.paths import create_paths_module
-from src.stdlib.time import create_time_module
-from src.stdlib.math import create_math_module
+from src.run.typecheck import check_type
 from src.var.token import (
     TT_MUL, TT_DIV,
     TT_PLUS, TT_MINUS,
@@ -22,14 +24,6 @@ from src.var.token import (
     TT_EE, TT_NE, TT_LT, TT_GT,
                 TT_LTE, TT_GTE
 )
-
-BUILTIN_MODULES = {
-    "system": create_system_module,
-    "files": create_files_module,
-    "paths": create_paths_module,
-    "time": create_time_module,
-    "math": create_math_module,
-}
 
 class Interpreter:
     def visit(self, node, context):
@@ -41,8 +35,13 @@ class Interpreter:
         raise Exception(f"No visit_{type(node).__name__} method defined")
     
     def visit_NumberNode(self, node, context):
+        from src.var.token import TT_INT as _TT_INT
+        if node.tok.type == _TT_INT:
+            val = Int(node.tok.value)
+        else:
+            val = Float(node.tok.value)
         return RTResult().success(
-            Number(node.tok.value).set_context(context).set_pos(node.pos_start, node.pos_end)
+            val.set_context(context).set_pos(node.pos_start, node.pos_end)
         )
     
     def visit_StringNode(self, node, context):
@@ -62,6 +61,30 @@ class Interpreter:
             List(elements).set_context(context).set_pos(node.pos_start, node.pos_end)
         )
 
+    def visit_DictNode(self, node, context):
+        res = RTResult()
+        entries = {}
+
+        for key_node, value_node in node.pair_nodes:
+            key_val = res.register(self.visit(key_node, context))
+            if res.should_return(): return res
+
+            if not isinstance(key_val, String):
+                return res.failure(RTError(
+                    key_node.pos_start, key_node.pos_end,
+                    "Dict keys must be strings",
+                    context,
+                ))
+
+            value_val = res.register(self.visit(value_node, context))
+            if res.should_return(): return res
+
+            entries[key_val.value] = value_val
+
+        return res.success(
+            Dict(entries).set_context(context).set_pos(node.pos_start, node.pos_end)
+        )
+
     def visit_VarAccessNode(self, node, context):
         res = RTResult()
         var_name = node.var_name_tok.value
@@ -73,15 +96,99 @@ class Interpreter:
                 f"'{var_name}' is not defined",
                 context
             ))
-        
+
+        from src.values.types.void import Uninitialized
+        if isinstance(value, Uninitialized):
+            return res.failure(RTError(
+                node.pos_start, node.pos_end,
+                f"Variable '{var_name}' has no value assigned",
+                context
+            ))
+
         value = value.copy().set_pos(node.pos_start, node.pos_end).set_context(context)
         return res.success(value)
 
     def visit_VarAssignNode(self, node, context):
         res = RTResult()
         var_name = node.var_name_tok.value
+        from src.values.types.void import Uninitialized
+        from src.values.types.list import List
+        from src.nodes.types.typeannotation import TypeAnnotationNode
+
+        if node.value_node is None:
+            if node.type_annotation is None:
+                return res.failure(RTError(
+                    node.pos_start, node.pos_end,
+                    f"Variable '{var_name}' must have either a type annotation or a value",
+                    context
+                ))
+            if "void" in node.type_annotation.type_parts:
+                return res.failure(RTError(
+                    node.pos_start, node.pos_end,
+                    "Cannot use 'void' as a variable type",
+                    context
+                ))
+            uninit = Uninitialized(var_name, node.type_annotation)
+            context.symbol_table.set(var_name, uninit)
+            return res.success(uninit)
+
         value = res.register(self.visit(node.value_node, context))
         if res.should_return(): return res
+
+        if node.is_reassign:
+            existing = context.symbol_table.get(var_name)
+            if existing is None:
+                return res.failure(RTError(
+                    node.pos_start, node.pos_end,
+                    f"'{var_name}' is not defined",
+                    context
+                ))
+            if isinstance(existing, Uninitialized) and existing.annotation is not None:
+                ann = existing.annotation
+                if "void" in ann.type_parts:
+                    return res.failure(RTError(
+                        node.pos_start, node.pos_end,
+                        "Cannot assign a value to a 'void'-typed variable",
+                        context
+                    ))
+                err = check_type(value, ann, context, node.pos_start, node.pos_end)
+                if err:
+                    return res.failure(err)
+                if isinstance(value, List):
+                    if ann.array_elem_types is not None:
+                        value.elem_annotation = TypeAnnotationNode(
+                            ann.array_elem_types, ann.pos_start, ann.pos_end
+                        )
+                    if ann.max_size is not None:
+                        value.max_size = ann.max_size
+            context.symbol_table.set(var_name, value)
+            return res.success(value)
+
+        if not runtime_flags.notypes and node.type_annotation is None:
+            return res.failure(RTError(
+                node.pos_start, node.pos_end,
+                f"Variable '{var_name}' has no type annotation. Use @use notypes to disable.",
+                context
+            ))
+
+        if node.type_annotation:
+            ann = node.type_annotation
+            if "void" in ann.type_parts:
+                return res.failure(RTError(
+                    node.pos_start, node.pos_end,
+                    "Cannot use 'void' as a variable type",
+                    context
+                ))
+            err = check_type(value, ann, context, node.pos_start, node.pos_end)
+            if err:
+                return res.failure(err)
+            if isinstance(value, List):
+                if ann.array_elem_types is not None:
+                    value.elem_annotation = TypeAnnotationNode(
+                        ann.array_elem_types, ann.pos_start, ann.pos_end
+                    )
+                if ann.max_size is not None:
+                    value.max_size = ann.max_size
 
         context.symbol_table.set(var_name, value)
         return res.success(value)
@@ -138,7 +245,7 @@ class Interpreter:
         elif node.op_tok.matches(TT_KEYWORD, "isnt"):
             number, error = number.notted()
         elif node.op_tok.matches(TT_KEYWORD, "is"):
-            number = Number(1 if number.is_true() else 0).set_context(number.context)
+            number = Boolean(number.is_true()).set_context(number.context)
 
         if error:
             return res.failure(error)
@@ -168,6 +275,36 @@ class Interpreter:
     def visit_ForNode(self, node, context):
         res = RTResult()
         elements = []
+        if node.start_value_node is None:
+            iterable = res.register(self.visit(node.end_value_node, context))
+            if res.should_return(): return res
+
+            from src.values.types.list import List as ListValue
+            if not isinstance(iterable, ListValue):
+                return res.failure(RTError(
+                    node.pos_start, node.pos_end,
+                    "Can only iterate over lists",
+                    context
+                ))
+
+            for elem in iterable.elements:
+                context.symbol_table.set(node.var_name_tok.value, elem.copy().set_context(context))
+
+                value = res.register(self.visit(node.body_node, context))
+                if res.should_return() and res.loop_should_continue == False and res.loop_should_break == False: return res
+
+                if res.loop_should_continue:
+                    continue
+
+                if res.loop_should_break:
+                    break
+
+                elements.append(value)
+
+            return res.success(
+                Number.null if node.should_return_null else
+                List(elements).set_context(context).set_pos(node.pos_start, node.pos_end)
+            )
 
         start_value = res.register(self.visit(node.start_value_node, context))
         if res.should_return(): return res
@@ -241,7 +378,43 @@ class Interpreter:
         func_name = node.var_name_tok.value if node.var_name_tok else None
         body_node = node.body_node
         arg_names = [arg_name.value for arg_name in node.arg_name_toks]
-        func_value = Function.Function(func_name, body_node, arg_names, node.should_auto_return).set_context(context).set_pos(node.pos_start, node.pos_end)
+
+        if not runtime_flags.notypes:
+            label = f"'{func_name}'" if func_name else "anonymous function"
+            if node.return_type is None:
+                return res.failure(RTError(
+                    node.pos_start, node.pos_end,
+                    f"Function {label} is missing a return type annotation. Use @use notypes to disable.",
+                    context
+                ))
+            if node.should_auto_return and node.return_type and "void" in node.return_type.type_parts:
+                return res.failure(RTError(
+                    node.pos_start, node.pos_end,
+                    f"Arrow function {label} cannot have 'void' return type",
+                    context
+                ))
+            for arg_tok, arg_type in zip(node.arg_name_toks, node.arg_types):
+                if arg_type is None:
+                    return res.failure(RTError(
+                        arg_tok.pos_start, arg_tok.pos_end,
+                        f"Argument '{arg_tok.value}' in function {label} is missing a type annotation.",
+                        context
+                    ))
+
+        arg_defaults = []
+        for default_node in node.arg_defaults:
+            if default_node is not None:
+                default_val = res.register(self.visit(default_node, context))
+                if res.should_return(): return res
+                arg_defaults.append(default_val)
+            else:
+                arg_defaults.append(None)
+
+        func_value = Function.Function(
+            func_name, body_node, arg_names, node.should_auto_return,
+            return_type=node.return_type, arg_types=node.arg_types,
+            arg_defaults=arg_defaults
+        ).set_context(context).set_pos(node.pos_start, node.pos_end)
         
         if node.var_name_tok:
             context.symbol_table.set(func_name, func_value)
@@ -251,6 +424,7 @@ class Interpreter:
     def visit_CallNode(self, node, context):
         res = RTResult()
         args = []
+        kwargs = {}
 
         value_to_call = res.register(self.visit(node.node_to_call, context))
         if res.should_return(): return res
@@ -260,7 +434,15 @@ class Interpreter:
             args.append(res.register(self.visit(arg_node, context)))
             if res.should_return(): return res
 
-        return_value = res.register(value_to_call.execute(args))
+        for kw_name, kw_node in node.kwarg_nodes.items():
+            kwargs[kw_name] = res.register(self.visit(kw_node, context))
+            if res.should_return(): return res
+
+        import src.values.function.function as FuncModule
+        if isinstance(value_to_call, FuncModule.Function):
+            return_value = res.register(value_to_call.execute(args, kwargs))
+        else:
+            return_value = res.register(value_to_call.execute(args))
         if res.should_return(): return res
         return_value = return_value.copy().set_pos(node.pos_start, node.pos_end).set_context(context)
         return res.success(return_value)
@@ -275,6 +457,13 @@ class Interpreter:
             module_value.set_context(context).set_pos(node.pos_start, node.pos_end)
             context.symbol_table.set(alias, module_value)
             return res.success(Number.null)
+
+        if module_path.startswith("omi/"):
+            return res.failure(RTError(
+                node.pos_start, node.pos_end,
+                f"Unknown standard library module 'omi/{module_path[4:]}'",
+                context
+            ))
 
         current_fn = node.pos_start.fn
         if current_fn and current_fn != "<stdin>":
@@ -297,8 +486,7 @@ class Interpreter:
             ))
 
         try:
-            with open(module_file, "r") as f:
-                script = f.read()
+            script = read_source_file(module_file)
         except Exception as e:
             return res.failure(RTError(
                 node.pos_start, node.pos_end,
@@ -308,8 +496,11 @@ class Interpreter:
 
         from src.main.lexer import Lexer
         from src.main.parser.parser import Parser
+        from src.nodes.directives.useN import UseDirectiveNode
 
-        lexer = Lexer(module_file, script)
+        clean_script = process(script)
+
+        lexer = Lexer(module_file, clean_script)
         tokens, error = lexer.make_tokens()
         if error:
             return res.failure(RTError(
@@ -324,6 +515,18 @@ class Interpreter:
             return res.failure(RTError(
                 node.pos_start, node.pos_end,
                 f"Error in module '{module_path}':\n" + ast.error.as_string(),
+                context
+            ))
+
+        stmts = ast.node.element_nodes if hasattr(ast.node, 'element_nodes') else []
+        has_module_decl = any(
+            isinstance(s, UseDirectiveNode) and s.directive.lower() == 'module'
+            for s in stmts
+        )
+        if not has_module_decl:
+            return res.failure(RTError(
+                node.pos_start, node.pos_end,
+                f"Cannot import '{module_path}': file does not declare '@use module'",
                 context
             ))
 
@@ -345,10 +548,10 @@ class Interpreter:
         module_value = res.register(self.visit(node.module_node, context))
         if res.should_return(): return res
 
-        if not isinstance(module_value, Module):
+        if not hasattr(module_value, 'get_member'):
             return res.failure(RTError(
                 node.pos_start, node.pos_end,
-                "Cannot access member of non-module value",
+                "Cannot use '.' on this value (not a module or dict)",
                 context
             ))
 
@@ -362,13 +565,14 @@ class Interpreter:
 
     def visit_ReturnNode(self, node, context):
         res = RTResult()
+        from src.values.types.void import Void
 
         if node.node_to_return:
             value = res.register(self.visit(node.node_to_return, context))
             if res.should_return(): return res
         else:
-            value = Number.null
-        
+            value = Void.void
+
         return res.success_return(value)
 
     def visit_ContinueNode(self, node, context):
@@ -376,3 +580,57 @@ class Interpreter:
 
     def visit_BreakNode(self, node, context):
         return RTResult().success_break()
+
+    def visit_FStringNode(self, node, context):
+        res = RTResult()
+        result = ""
+        for kind, value in node.parts:
+            if kind == "lit":
+                result += value
+            else:
+                val = res.register(self.visit(value, context))
+                if res.should_return(): return res
+                if isinstance(val, String):
+                    result += val.value
+                else:
+                    result += str(val)
+        return res.success(
+            String(result).set_context(context).set_pos(node.pos_start, node.pos_end)
+        )
+
+    def visit_TernaryOpNode(self, node, context):
+        res = RTResult()
+        cond = res.register(self.visit(node.cond_node, context))
+        if res.should_return(): return res
+        if cond.is_true():
+            val = res.register(self.visit(node.true_node, context))
+        else:
+            val = res.register(self.visit(node.false_node, context))
+        if res.should_return(): return res
+        return res.success(val.copy().set_pos(node.pos_start, node.pos_end).set_context(context))
+
+    def visit_UseDirectiveNode(self, node, context):
+        directive = node.directive.lower()
+        if directive not in runtime_flags.VALID_DIRECTIVES:
+            return RTResult().failure(RTError(
+                node.pos_start, node.pos_end,
+                f"Unknown directive '@use {directive}'. Valid: {', '.join(sorted(runtime_flags.VALID_DIRECTIVES))}",
+                context
+            ))
+        if directive == 'debug':
+            runtime_flags.debug = True
+        elif directive == 'noecho':
+            runtime_flags.noecho = True
+        elif directive == 'eval':
+            runtime_flags.eval_enabled = True
+        elif directive == 'notypes':
+            runtime_flags.notypes = True
+        return RTResult().success(Number.null)
+
+    def visit_TypeAliasNode(self, node, context):
+        alias_name = node.name_tok.value
+        context.symbol_table.set(f"__type_{alias_name}__", node.type_annotation)
+        return RTResult().success(Number.null)
+
+    def visit_SetDirectiveNode(self, node, context):
+        return RTResult().success(Number.null)

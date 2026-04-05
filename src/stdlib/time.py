@@ -3,32 +3,18 @@ import datetime
 from src.values.types.number import Number
 from src.values.types.string import String
 from src.values.types.module import Module
-from src.values.function.base import BaseFunction
+from src.values.function.stdlib import StdlibFunction
 from src.run.runtime import RTResult
 from src.main.symboltable import SymbolTable
 from src.error.message.rt import RTError
 
 
-class TimeBuiltInFunction(BaseFunction):
+DEFAULT_TIME_FORMAT = "%Y-%m-%d %H:%M:%S"
+
+
+class TimeBuiltInFunction(StdlibFunction):
     def __init__(self, name):
         super().__init__(name)
-
-    def execute(self, args):
-        res = RTResult()
-        exec_ctx = self.generate_new_context()
-
-        method_name = f"execute_{self.name}"
-        method = getattr(self, method_name, self.no_visit_method)
-
-        res.register(self.check_and_populate_args(method.arg_names, args, exec_ctx))
-        if res.should_return(): return res
-
-        return_value = res.register(method(exec_ctx))
-        if res.should_return(): return res
-        return res.success(return_value)
-
-    def no_visit_method(self, node, context):
-        raise Exception(f"No execute_{self.name} method defined")
 
     def copy(self):
         copy = TimeBuiltInFunction(self.name)
@@ -70,7 +56,9 @@ class TimeBuiltInFunction(BaseFunction):
                 f"Failed to format timestamp: {e}",
                 exec_ctx
             ))
-    execute_format.arg_names = ["timestamp", "fmt"]
+    execute_format.arg_names = ["timestamp"]
+    execute_format.opt_names = ["fmt"]
+    execute_format.opt_defaults_factory = lambda: [String(DEFAULT_TIME_FORMAT)]
 
     def execute_sleep(self, exec_ctx):
         seconds = exec_ctx.symbol_table.get("seconds")
@@ -120,7 +108,9 @@ class TimeBuiltInFunction(BaseFunction):
                 f"Failed to parse time string: {e}",
                 exec_ctx
             ))
-    execute_parse.arg_names = ["string", "fmt"]
+    execute_parse.arg_names = ["string"]
+    execute_parse.opt_names = ["fmt"]
+    execute_parse.opt_defaults_factory = lambda: [String(DEFAULT_TIME_FORMAT)]
 
     def execute_timezone(self, exec_ctx):
         offset_seconds = -_time.timezone

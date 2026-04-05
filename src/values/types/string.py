@@ -10,13 +10,13 @@ class String(Value):
 		if isinstance(other, String):
 			return String(self.value + other.value).set_context(self.context), None
 		else:
-			return None, Value.illegal_operation(self, other)
+			return None, Value.illegal_operation(self, other, op='+')
 
 	def multed_by(self, other):
 		if isinstance(other, Number):
 			return String(self.value * other.value).set_context(self.context), None
 		else:
-			return None, Value.illegal_operation(self, other)
+			return None, Value.illegal_operation(self, other, op='*')
 
 	def is_true(self):
 		return len(self.value) > 0
@@ -28,7 +28,7 @@ class String(Value):
 		return copy
 
 	def __str__(self):
-		return self.value
+		return self.value.replace("\x00TILDE\x00", "~")
 
 	def __repr__(self):
-		return f'"{self.value}"'
+		return f'"{self.value.replace(chr(0) + "TILDE" + chr(0), "~")}"'
