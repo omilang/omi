@@ -39,6 +39,8 @@ TT_NEWLINE = "NEWLINE"
 TT_COLON = "COLON"
 TT_DOT = "DOT"
 TT_AT = "AT"
+TT_QUESTION = "QUESTION"
+TT_NULLCOAL = "NULLCOAL"
 
 TOKEN_DISPLAY_NAMES = {
     TT_E0F: "end of file",
@@ -67,4 +69,6 @@ TOKEN_DISPLAY_NAMES = {
     TT_DOT: "'.'",
     TT_AT: "'@'",
     TT_TILDE: "'~'",
+    TT_QUESTION: "'?'",
+    TT_NULLCOAL: "'??'",
 }
