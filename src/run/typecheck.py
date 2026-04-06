@@ -35,6 +35,10 @@ def check_type(value, type_annotation, context, pos_start, pos_end):
     if type_annotation is None:
         return None
 
+    from src.nodes.types.typeannotation import DictTypeAnnotation
+    if isinstance(type_annotation, DictTypeAnnotation):
+        return _check_dict_type(value, type_annotation, context, pos_start, pos_end)
+
     from src.values.types.list import List
     from src.nodes.types.typeannotation import TypeAnnotationNode
 
@@ -64,6 +68,8 @@ def check_type(value, type_annotation, context, pos_start, pos_end):
 
     type_map = _build_type_map()
 
+    specific_err = None 
+
     for part in type_annotation.type_parts:
         if part.startswith('"') and part.endswith('"'):
             from src.values.types.string import String
@@ -77,11 +83,15 @@ def check_type(value, type_annotation, context, pos_start, pos_end):
             err = check_type(value, resolved, context, pos_start, pos_end)
             if err is None:
                 return None
+            specific_err = err
             continue
 
         checker = type_map.get(part)
         if checker and checker(value):
             return None
+
+    if specific_err is not None and len(type_annotation.type_parts) == 1:
+        return specific_err
 
     from src.values.types.string import String
     actual = _type_name(value)
@@ -122,3 +132,41 @@ def _type_name(value):
     if isinstance(value, BaseFunction):
         return "call"
     return type(value).__name__.lower()
+
+
+def _check_dict_type(value, dict_ann, context, pos_start, pos_end):
+    from src.values.types.dict import Dict
+    from src.nodes.types.typeannotation import TypeAnnotationNode, DictTypeAnnotation
+
+    if not isinstance(value, Dict):
+        actual = _type_name(value)
+        return RTError(
+            pos_start, pos_end,
+            f"Type error: expected dict type '{dict_ann}', got {actual}",
+            context
+        )
+
+    for field_name, field_ann in dict_ann.fields.items():
+        is_nullable = (
+            isinstance(field_ann, TypeAnnotationNode) and "null" in field_ann.type_parts
+        )
+
+        if field_name not in value.entries:
+            if is_nullable:
+                continue
+            return RTError(
+                pos_start, pos_end,
+                f"Dict is missing required field '{field_name}'",
+                context
+            )
+
+        field_val = value.entries[field_name]
+        err = check_type(field_val, field_ann, context, pos_start, pos_end)
+        if err:
+            return RTError(
+                pos_start, pos_end,
+                f"Field '{field_name}': {err.details}",
+                context
+            )
+
+    return None

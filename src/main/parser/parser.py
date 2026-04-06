@@ -14,6 +14,7 @@ from src.var.token import (
     TT_NEWLINE,
     TT_COLON,
     TT_DOT, TT_AT, TT_TILDE,
+    TT_QUESTION, TT_NULLCOAL,
     TOKEN_DISPLAY_NAMES,
 )
 
@@ -37,10 +38,12 @@ from src.nodes.jump.continueN import ContinueNode
 from src.nodes.imports.importN import ImportNode
 from src.nodes.imports.moduleaccess import ModuleAccessNode
 from src.nodes.ops.ternaryop import TernaryOpNode
+from src.nodes.ops.nullcoal import NullCoalNode
 from src.nodes.directives.useN import UseDirectiveNode
 from src.nodes.directives.setN import SetDirectiveNode
 from src.nodes.directives.typealiasN import TypeAliasNode
-from src.nodes.types.typeannotation import TypeAnnotationNode
+from src.nodes.types.typeannotation import TypeAnnotationNode, DictTypeAnnotation
+from src.nodes.types.subscript import DictSubscriptNode
 from src.error.message.invalidsyntax import InvalidSyntaxError
 from src.main.parser.result import ParseResult
 
@@ -107,6 +110,11 @@ class Parser:
                 "Expected type name or string literal in type annotation"
             ))
         type_parts.append(part)
+        if self.current_tok.type == TT_QUESTION:
+            res.register_advancement()
+            self.advance()
+            if "null" not in type_parts:
+                type_parts.append("null")
 
         while self.current_tok.type == TT_PIPE:
             res.register_advancement()
@@ -118,6 +126,11 @@ class Parser:
                     "Expected type name or string literal after '|'"
                 ))
             type_parts.append(part)
+            if self.current_tok.type == TT_QUESTION:
+                res.register_advancement()
+                self.advance()
+                if "null" not in type_parts:
+                    type_parts.append("null")
 
         if self.current_tok.type != TT_GT:
             return res.failure(InvalidSyntaxError(
@@ -220,12 +233,84 @@ class Parser:
         if tok.type in (TT_IDENTIFIER, TT_KEYWORD):
             name = tok.value
             self.advance()
+            if self.current_tok.type == TT_DOT:
+                self.advance()
+                if self.current_tok.type in (TT_IDENTIFIER, TT_KEYWORD):
+                    name = name + '.' + self.current_tok.value
+                    self.advance()
             return name
         if tok.type == TT_STRING:
             val = f'"{tok.value}"'
             self.advance()
             return val
         return None
+
+    def _parse_dict_type_def(self):
+        res = ParseResult()
+        pos_start = self.current_tok.pos_start.copy()
+        fields = {}
+
+        res.register_advancement()
+        self.advance()
+
+        while self.current_tok.type == TT_NEWLINE:
+            res.register_advancement()
+            self.advance()
+
+        while self.current_tok.type != TT_RBRACE and self.current_tok.type != TT_E0F:
+            if self.current_tok.type not in (TT_IDENTIFIER, TT_KEYWORD):
+                return res.failure(InvalidSyntaxError(
+                    self.current_tok.pos_start, self.current_tok.pos_end,
+                    "Expected field name in dict type definition"
+                ))
+
+            field_name = self.current_tok.value
+            res.register_advancement()
+            self.advance()
+
+            if self.current_tok.type == TT_LT:
+                ann = res.register(self.parse_type_annotation())
+                if res.error: return res
+                fields[field_name] = ann
+            elif self.current_tok.type == TT_COLON:
+                res.register_advancement()
+                self.advance()
+                while self.current_tok.type == TT_NEWLINE:
+                    res.register_advancement()
+                    self.advance()
+                if self.current_tok.type != TT_LBRACE:
+                    return res.failure(InvalidSyntaxError(
+                        self.current_tok.pos_start, self.current_tok.pos_end,
+                        "Expected '{' for nested dict type"
+                    ))
+                nested = res.register(self._parse_dict_type_def())
+                if res.error: return res
+                fields[field_name] = nested
+            else:
+                return res.failure(InvalidSyntaxError(
+                    self.current_tok.pos_start, self.current_tok.pos_end,
+                    f"Expected '<type>' or ': {{...}}' after field name '{field_name}'"
+                ))
+
+            if self.current_tok.type == TT_COMMA:
+                res.register_advancement()
+                self.advance()
+
+            while self.current_tok.type == TT_NEWLINE:
+                res.register_advancement()
+                self.advance()
+
+        if self.current_tok.type != TT_RBRACE:
+            return res.failure(InvalidSyntaxError(
+                self.current_tok.pos_start, self.current_tok.pos_end,
+                "Expected '}' to close dict type definition"
+            ))
+
+        pos_end = self.current_tok.pos_end.copy()
+        res.register_advancement()
+        self.advance()
+
+        return res.success(DictTypeAnnotation(fields, pos_start, pos_end))
     
     def parse(self):
         res = self.statements()
@@ -756,21 +841,42 @@ class Parser:
         atom = res.register(self.atom())
         if res.error: return res
 
-        while self.current_tok.type == TT_DOT:
-            res.register_advancement()
-            self.advance()
+        while self.current_tok.type in (TT_DOT, TT_LSQUARE):
+            if self.current_tok.type == TT_DOT:
+                res.register_advancement()
+                self.advance()
 
-            if self.current_tok.type != TT_IDENTIFIER:
-                return res.failure(InvalidSyntaxError(
-                    self.current_tok.pos_start, self.current_tok.pos_end,
-                    "Expected identifier after '.'"
-                ))
+                if self.current_tok.type != TT_IDENTIFIER:
+                    return res.failure(InvalidSyntaxError(
+                        self.current_tok.pos_start, self.current_tok.pos_end,
+                        "Expected identifier after '.'"
+                    ))
 
-            attr_tok = self.current_tok
-            res.register_advancement()
-            self.advance()
+                attr_tok = self.current_tok
+                res.register_advancement()
+                self.advance()
 
-            atom = ModuleAccessNode(atom, attr_tok)
+                atom = ModuleAccessNode(atom, attr_tok)
+
+            elif self.current_tok.type == TT_LSQUARE:
+                pos_start = self.current_tok.pos_start.copy()
+                res.register_advancement()
+                self.advance()
+
+                index = res.register(self.expr())
+                if res.error: return res
+
+                if self.current_tok.type != TT_RSQUARE:
+                    return res.failure(InvalidSyntaxError(
+                        self.current_tok.pos_start, self.current_tok.pos_end,
+                        "Expected ']' after subscript index"
+                    ))
+
+                pos_end = self.current_tok.pos_end.copy()
+                res.register_advancement()
+                self.advance()
+
+                atom = DictSubscriptNode(atom, index, pos_start, pos_end)
 
         if self.current_tok.type == TT_LPAREN:
             res.register_advancement()
@@ -1043,6 +1149,11 @@ class Parser:
             res.register_advancement()
             self.advance()
 
+            if self.current_tok.type == TT_LBRACE:
+                dict_ann = res.register(self._parse_dict_type_def())
+                if res.error: return res
+                return res.success(TypeAliasNode(name_tok, dict_ann, pos_start, self.current_tok.pos_start.copy()))
+
             type_parts = []
             part = self._parse_single_type()
             if part is None:
@@ -1051,6 +1162,11 @@ class Parser:
                     "Expected type name or string literal"
                 ))
             type_parts.append(part)
+            if self.current_tok.type == TT_QUESTION:
+                res.register_advancement()
+                self.advance()
+                if "null" not in type_parts:
+                    type_parts.append("null")
 
             while self.current_tok.type == TT_PIPE:
                 res.register_advancement()
@@ -1062,6 +1178,11 @@ class Parser:
                         "Expected type name or string literal after '|'"
                     ))
                 type_parts.append(part)
+                if self.current_tok.type == TT_QUESTION:
+                    res.register_advancement()
+                    self.advance()
+                    if "null" not in type_parts:
+                        type_parts.append("null")
 
             type_ann = TypeAnnotationNode(type_parts, pos_start, self.current_tok.pos_start.copy())
             return res.success(TypeAliasNode(name_tok, type_ann, pos_start, self.current_tok.pos_start.copy()))
@@ -1145,6 +1266,13 @@ class Parser:
 
         if res.error:
             return res
+
+        if self.current_tok.type == TT_NULLCOAL:
+            res.register_advancement()
+            self.advance()
+            right = res.register(self.bin_op(self.comp_expr, ((TT_KEYWORD, "and"), (TT_KEYWORD, "or"))))
+            if res.error: return res
+            return res.success(NullCoalNode(node, right))
 
         if self.current_tok.type == TT_TILDE:
             true_node = node

@@ -6,6 +6,7 @@ from src.tokens import Token
 from src.error.message.illegalchar import IllegalCharError
 from src.error.message.expectedchar import ExpectedCharError
 from src.position import Position
+from src.var.token import TT_QUESTION, TT_NULLCOAL
 
 class Lexer():
     def __init__(self, fn, text):
@@ -103,6 +104,8 @@ class Lexer():
             elif self.current_char == "~":
                 tokens.append(Token(TT_TILDE, pos_start=self.pos))
                 self.advance()
+            elif self.current_char == "?":
+                tokens.append(self.make_question_or_nullcoal())
 
             else:
                 pos_start = self.pos.copy()
@@ -137,30 +140,72 @@ class Lexer():
         pos_start = self.pos.copy()
         escape_character = False
         has_interp = False
+        interp_depth = 0
+        inner_str_quote = None
+        inner_escape = False
         self.advance()
 
-        escape_characters = {
-            "n": "\n",
-            "t": "\t",
-            "~": "\x00TILDE\x00",
-        }
+        while self.current_char is not None:
+            ch = self.current_char
 
-        while self.current_char != None and (self.current_char != '"' or escape_character):
-            if escape_character:
-                if self.current_char == "~":
-                    string += "\x00TILDE\x00"
+            if inner_str_quote is not None:
+                if inner_escape:
+                    inner_escape = False
+                    string += ch
+                elif ch == '\\':
+                    inner_escape = True
+                    string += ch
+                elif ch == inner_str_quote:
+                    inner_str_quote = None
+                    string += ch
                 else:
-                    string += escape_characters.get(self.current_char, self.current_char)
+                    string += ch
+                self.advance()
+                continue
+
+            if interp_depth > 0:
+                if ch == '(':
+                    interp_depth += 1
+                    string += ch
+                elif ch == ')':
+                    interp_depth -= 1
+                    string += ch
+                elif ch in ('"', "'"):
+                    inner_str_quote = ch
+                    string += ch
+                else:
+                    string += ch
+                self.advance()
+                continue
+
+            if escape_character:
+                if ch == '~':
+                    string += "\x00TILDE\x00"
+                elif ch == 'n':
+                    string += '\n'
+                elif ch == 't':
+                    string += '\t'
+                else:
+                    string += ch
                 escape_character = False
-            elif self.current_char == "\\":
+                self.advance()
+            elif ch == '\\':
                 escape_character = True
-            elif self.current_char == "~":
+                self.advance()
+            elif ch == '"':
+                break 
+            elif ch == '~':
                 has_interp = True
-                string += self.current_char
+                string += '~'
+                self.advance()
+                if self.current_char == '(':
+                    string += '('
+                    interp_depth = 1
+                    self.advance()
             else:
-                string += self.current_char
-            self.advance()
-        
+                string += ch
+                self.advance()
+
         self.advance()
         tok_type = TT_FSTRING if has_interp else TT_STRING
         return Token(tok_type, string, pos_start, self.pos)
@@ -197,6 +242,14 @@ class Lexer():
             tok_type = TT_ARROW
 
         return Token(tok_type, pos_start=pos_start, pos_end=self.pos)
+
+    def make_question_or_nullcoal(self):
+        pos_start = self.pos.copy()
+        self.advance()
+        if self.current_char == "?":
+            self.advance()
+            return Token(TT_NULLCOAL, pos_start=pos_start, pos_end=self.pos)
+        return Token(TT_QUESTION, pos_start=pos_start, pos_end=self.pos)
 
     def make_equals(self):
         tok_type = TT_EQ

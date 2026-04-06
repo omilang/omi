@@ -15,3 +15,16 @@ class TypeAnnotationNode:
         if self.max_size is not None:
             return f"{base}({self.max_size})"
         return base
+
+
+class DictTypeAnnotation:
+    def __init__(self, fields, pos_start, pos_end):
+        self.fields = fields
+        self.pos_start = pos_start
+        self.pos_end = pos_end
+
+    def __repr__(self):
+        parts = []
+        for name, ann in self.fields.items():
+            parts.append(f"{name}<{ann}>")
+        return "{" + ", ".join(parts) + "}"

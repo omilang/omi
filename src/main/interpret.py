@@ -540,6 +540,11 @@ class Interpreter:
         module_value = Module(module_path, module_symbol_table).set_context(context).set_pos(node.pos_start, node.pos_end)
         context.symbol_table.set(alias, module_value)
 
+        for key, val in module_symbol_table.symbols.items():
+            if key.startswith("__type_") and key.endswith("__"):
+                type_name = key[7:-2]
+                context.symbol_table.set(f"__type_{alias}.{type_name}__", val)
+
         return res.success(Number.null)
 
     def visit_ModuleAccessNode(self, node, context):
@@ -609,6 +614,70 @@ class Interpreter:
         if res.should_return(): return res
         return res.success(val.copy().set_pos(node.pos_start, node.pos_end).set_context(context))
 
+    def visit_NullCoalNode(self, node, context):
+        res = RTResult()
+        from src.values.types.null import Null
+        from src.values.types.void import Void
+
+        left = res.register(self.visit(node.left, context))
+        if res.should_return(): return res
+
+        if isinstance(left, (Null, Void)):
+            right = res.register(self.visit(node.right, context))
+            if res.should_return(): return res
+            return res.success(right.copy().set_pos(node.pos_start, node.pos_end).set_context(context))
+
+        return res.success(left.copy().set_pos(node.pos_start, node.pos_end).set_context(context))
+
+    def visit_DictSubscriptNode(self, node, context):
+        res = RTResult()
+
+        base = res.register(self.visit(node.base_node, context))
+        if res.should_return(): return res
+
+        index = res.register(self.visit(node.index_node, context))
+        if res.should_return(): return res
+
+        if isinstance(base, Dict):
+            if not isinstance(index, String):
+                return res.failure(RTError(
+                    node.pos_start, node.pos_end,
+                    f"Dict key must be a string, got {type(index).__name__.lower()}",
+                    context
+                ))
+            value, error = base.get_member(index.value)
+            if error:
+                return res.failure(RTError(
+                    node.pos_start, node.pos_end,
+                    f"Key '{index.value}' not found in dict",
+                    context
+                ))
+            return res.success(value.copy().set_pos(node.pos_start, node.pos_end).set_context(context))
+
+        if isinstance(base, List):
+            from src.values.types.number import Int
+            if not isinstance(index, Int):
+                return res.failure(RTError(
+                    node.pos_start, node.pos_end,
+                    f"List index must be an integer, got {type(index).__name__.lower()}",
+                    context
+                ))
+            try:
+                value = base.elements[index.value]
+            except IndexError:
+                return res.failure(RTError(
+                    node.pos_start, node.pos_end,
+                    f"List index {index.value} out of range (length {len(base.elements)})",
+                    context
+                ))
+            return res.success(value.copy().set_pos(node.pos_start, node.pos_end).set_context(context))
+
+        return res.failure(RTError(
+            node.pos_start, node.pos_end,
+            f"Subscript access '[]' is only supported for dicts and lists",
+            context
+        ))
+
     def visit_UseDirectiveNode(self, node, context):
         directive = node.directive.lower()
         if directive not in runtime_flags.VALID_DIRECTIVES:
@@ -633,4 +702,14 @@ class Interpreter:
         return RTResult().success(Number.null)
 
     def visit_SetDirectiveNode(self, node, context):
+        lhs = node.lhs
+        rhs = node.rhs
+        type_key = f"__type_{lhs}__"
+        resolved_type = context.symbol_table.get(type_key)
+        if resolved_type is not None:
+            context.symbol_table.set(f"__type_{rhs}__", resolved_type)
+            return RTResult().success(Number.null)
+        val = context.symbol_table.get(lhs)
+        if val is not None:
+            context.symbol_table.set(rhs, val)
         return RTResult().success(Number.null)
