@@ -22,8 +22,46 @@ class BuiltInFunction(BaseFunction):
     method_name = f"execute_{self.name}"
     method = getattr(self, method_name, self.no_visit_method)
 
-    res.register(self.check_and_populate_args(method.arg_names, args, exec_ctx))
-    if res.should_return(): return res
+    required = getattr(method, "arg_names", [])
+    optional = getattr(method, "opt_names", [])
+    defaults_factory = getattr(method, "opt_defaults_factory", None)
+    defaults = defaults_factory() if defaults_factory else getattr(method, "opt_defaults", [])
+    var_arg_name = getattr(method, "var_arg_name", None)
+
+    min_args = len(required)
+    max_args = None if var_arg_name else min_args + len(optional)
+
+    if len(args) < min_args:
+      missing = required[len(args):]
+      missing_str = ", ".join(f"'{name}'" for name in missing)
+      return res.failure(RTError(
+        self.pos_start, self.pos_end,
+        f"'{self.name}' missing argument{'s' if len(missing) != 1 else ''}: {missing_str}",
+        self.context
+      ))
+
+    if max_args is not None and len(args) > max_args:
+      return res.failure(RTError(
+        self.pos_start, self.pos_end,
+        f"'{self.name}' takes {max_args} argument{'s' if max_args != 1 else ''}, but {len(args)} were given",
+        self.context
+      ))
+
+    for i, name in enumerate(required):
+      arg_value = args[i]
+      arg_value.set_context(exec_ctx)
+      exec_ctx.symbol_table.set(name, arg_value)
+
+    for i, name in enumerate(optional):
+      arg_index = min_args + i
+      arg_value = args[arg_index] if arg_index < len(args) else defaults[i]
+      if arg_value is not None:
+        arg_value.set_context(exec_ctx)
+      exec_ctx.symbol_table.set(name, arg_value)
+
+    if var_arg_name is not None:
+      var_args = List(args[min_args + len(optional):]).set_context(exec_ctx)
+      exec_ctx.symbol_table.set(var_arg_name, var_args)
 
     return_value = res.register(method(exec_ctx))
     if res.should_return(): return res
@@ -41,31 +79,42 @@ class BuiltInFunction(BaseFunction):
   def __repr__(self):
     return f"<built-in function {self.name}>"
 
+  def _emit(self, values, sep="", end=""):
+    if flags.noecho:
+      return
+    text = sep.join(str(value) for value in values)
+    print(text, end=end)
+
   def execute_print(self, exec_ctx):
-    if not flags.noecho:
-      print(str(exec_ctx.symbol_table.get("value")))
+    value = exec_ctx.symbol_table.get("value")
+    self._emit([value])
     return RTResult().success(Number.null)
   execute_print.arg_names = ["value"]
-  
-  def execute_print_ret(self, exec_ctx):
+
+  def execute_println(self, exec_ctx):
+    value = exec_ctx.symbol_table.get("value")
+    end = exec_ctx.symbol_table.get("end")
+    self._emit([value], end=str(end) if end is not None else "\n")
+    return RTResult().success(Number.null)
+  execute_println.arg_names = ["value"]
+  execute_println.opt_names = ["end"]
+  execute_println.opt_defaults_factory = lambda: [String("\n")]
+
+  def execute_output(self, exec_ctx):
+    values = exec_ctx.symbol_table.get("values")
+    items = values.elements if isinstance(values, List) else []
+    self._emit(items, sep=" ", end="\n")
+    return RTResult().success(Number.null)
+  execute_output.var_arg_name = "values"
+
+  def execute_reprint(self, exec_ctx):
     return RTResult().success(String(str(exec_ctx.symbol_table.get("value"))))
-  execute_print_ret.arg_names = ["value"]
-  
+  execute_reprint.arg_names = ["value"]
+
   def execute_input(self, exec_ctx):
     text = input(">>> ")
     return RTResult().success(String(text))
   execute_input.arg_names = []
-
-  def execute_input_int(self, exec_ctx):
-    while True:
-      text = input(">>> ")
-      try:
-        number = int(text)
-        break
-      except ValueError:
-        print(f"'{text}' must be an integer. Try again!")
-    return RTResult().success(Number(number))
-  execute_input_int.arg_names = []
 
   def execute_clear(self, exec_ctx):
     os.system("cls" if os.name == "nt" else "cls") 

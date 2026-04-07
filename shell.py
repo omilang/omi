@@ -65,6 +65,8 @@ while True:
                     print(repr(result.elements[0]))
                 else:
                     print(repr(result))
+            
+            print()
             continue
 
         result, error, _ = run("<stdin>", text)
@@ -76,5 +78,7 @@ while True:
                 print(repr(result.elements[0]))
             else:
                 print(repr(result))
+        
+        print()
     except KeyboardInterrupt:
         exit(0)
