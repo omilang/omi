@@ -143,8 +143,14 @@ class Interpreter:
                     f"'{var_name}' is not defined",
                     context
                 ))
+            
+            ann = None
             if isinstance(existing, Uninitialized) and existing.annotation is not None:
                 ann = existing.annotation
+            elif hasattr(existing, 'type_annotation') and existing.type_annotation is not None:
+                ann = existing.type_annotation
+            
+            if ann is not None:
                 if "void" in ann.type_parts:
                     return res.failure(RTError(
                         node.pos_start, node.pos_end,
@@ -161,6 +167,7 @@ class Interpreter:
                         )
                     if ann.max_size is not None:
                         value.max_size = ann.max_size
+                value.set_annotation(ann)
             context.symbol_table.set(var_name, value)
             return res.success(value)
 
@@ -189,6 +196,7 @@ class Interpreter:
                     )
                 if ann.max_size is not None:
                     value.max_size = ann.max_size
+            value.set_annotation(ann)
 
         context.symbol_table.set(var_name, value)
         return res.success(value)
@@ -458,10 +466,10 @@ class Interpreter:
             context.symbol_table.set(alias, module_value)
             return res.success(Number.null)
 
-        if module_path.startswith("omi/"):
+        if module_path.startswith("omi:"):
             return res.failure(RTError(
                 node.pos_start, node.pos_end,
-                f"Unknown standard library module 'omi/{module_path[4:]}'",
+                f"Unknown standard library module 'omi:{module_path[4:]}'",
                 context
             ))
 

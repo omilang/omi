@@ -10,7 +10,7 @@ SOURCE_FILE_ENCODINGS = (
     "cp1251",
 )
 
-VERSION = "1.2.0"
+VERSION = "1.2.1"
 
 HELP_TEXT = f"""\
 Omi {VERSION}

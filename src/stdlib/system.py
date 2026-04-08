@@ -36,7 +36,7 @@ class SystemBuiltInFunction(StdlibFunction):
             ))
         try:
             result = subprocess.run(
-                cmd.value, shell=True, capture_output=True, text=True
+                cmd.value, shell=True, capture_output=True, text=True, encoding='oem'
             )
             output = result.stdout if result.returncode == 0 else result.stderr
             return RTResult().success(String(output.rstrip("\n")))

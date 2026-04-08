@@ -41,9 +41,24 @@ or
 python shell.py run example.omi
 ```
 
-## Example
-
 <!-- js highlights OmiLang syntax better than plain text -->
+
+
+### Hello World
+
+```js
+print("Hello, World!")
+```
+
+```js
+println("Hello, World!")
+```
+
+```js
+output("Hello,", "World!")
+```
+
+## Example
 
 ```js
 func<int> factorial(n<int>):
@@ -53,17 +68,17 @@ end
 
 // Factorial from 1 to 6
 for i = 1 to 6:
-  print(factorial(i))
+  println(factorial(i))
 end
 ```
 
 ```js
-@import "omi/system" as sys
+@import "omi:system" as sys
 @set sys.username as user
 
-func<null> greet(name<string>):
-  print("Hello, " + name + "!")
-  return null
+func<void> greet(name<string>):
+  println("Hello, " + name + "!")
+  return
 end
 
 var<string> name = user()
