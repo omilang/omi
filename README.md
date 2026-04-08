@@ -73,12 +73,12 @@ end
 ```
 
 ```js
-@import "omi/system" as sys
+@import "omi:system" as sys
 @set sys.username as user
 
-func<null> greet(name<string>):
+func<void> greet(name<string>):
   println("Hello, " + name + "!")
-  return null
+  return
 end
 
 var<string> name = user()

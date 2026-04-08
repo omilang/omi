@@ -7,11 +7,11 @@ from src.stdlib.json import create_json_module
 from src.stdlib.http import create_http_module
 
 BUILTIN_MODULES = {
-    "omi/system": create_system_module,
-    "omi/files":  create_files_module,
-    "omi/paths":  create_paths_module,
-    "omi/time":   create_time_module,
-    "omi/math":   create_math_module,
-    "omi/json":   create_json_module,
-    "omi/http":   create_http_module,
+    "omi:system": create_system_module,
+    "omi:files":  create_files_module,
+    "omi:paths":  create_paths_module,
+    "omi:time":   create_time_module,
+    "omi:math":   create_math_module,
+    "omi:json":   create_json_module,
+    "omi:http":   create_http_module,
 }

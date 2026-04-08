@@ -9,6 +9,7 @@ class Value:
     def __init__(self):
         self.set_pos()
         self.set_context()
+        self.type_annotation = None
 
     def set_pos(self, pos_start=None, pos_end=None):
         self.pos_start = pos_start
@@ -17,6 +18,10 @@ class Value:
 
     def set_context(self, context=None):
         self.context = context
+        return self
+    
+    def set_annotation(self, annotation):
+        self.type_annotation = annotation
         return self
 
     def added_to(self, other):
