@@ -1,5 +1,6 @@
 KEYWORDS = [
     "var",
+    "const",
     "and",
     "or",
     "is",

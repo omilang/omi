@@ -166,6 +166,13 @@ class BuiltInFunction(BaseFunction):
         exec_ctx
       ))
 
+    if hasattr(list_, 'is_const') and list_.is_const:
+      return RTResult().failure(RTError(
+        self.pos_start, self.pos_end,
+        "Cannot modify a constant array",
+        exec_ctx
+      ))
+
     if list_.max_size is not None and len(list_.elements) >= list_.max_size:
       return RTResult().failure(RTError(
         self.pos_start, self.pos_end,
@@ -191,6 +198,13 @@ class BuiltInFunction(BaseFunction):
       return RTResult().failure(RTError(
         self.pos_start, self.pos_end,
         "First argument must be array",
+        exec_ctx
+      ))
+
+    if hasattr(list_, 'is_const') and list_.is_const:
+      return RTResult().failure(RTError(
+        self.pos_start, self.pos_end,
+        "Cannot modify a constant array",
         exec_ctx
       ))
 
@@ -220,6 +234,13 @@ class BuiltInFunction(BaseFunction):
       return RTResult().failure(RTError(
         self.pos_start, self.pos_end,
         "First argument must be array",
+        exec_ctx
+      ))
+
+    if hasattr(listA, 'is_const') and listA.is_const:
+      return RTResult().failure(RTError(
+        self.pos_start, self.pos_end,
+        "Cannot modify a constant array",
         exec_ctx
       ))
 
@@ -254,17 +275,20 @@ class BuiltInFunction(BaseFunction):
   execute_extend.arg_names = ["listA", "listB"]
     
   def execute_len(self, exec_ctx):
-      list_ = exec_ctx.symbol_table.get("list")
+      value = exec_ctx.symbol_table.get("value")
 
-      if not isinstance(list_, List):
-        return RTResult().failure(RTError(
-          self.pos_start, self.pos_end,
-          "Argument must be array",
-          exec_ctx
-        ))
+      if isinstance(value, List):
+        return RTResult().success(Number(len(value.elements)))
 
-      return RTResult().success(Number(len(list_.elements)))
-  execute_len.arg_names = ["list"]
+      if isinstance(value, String):
+        return RTResult().success(Number(len(value.value)))
+
+      return RTResult().failure(RTError(
+        self.pos_start, self.pos_end,
+        "Argument must be array or string",
+        exec_ctx
+      ))
+  execute_len.arg_names = ["value"]
 
   def execute_eval(self, exec_ctx):
     if not flags.eval_enabled:
@@ -294,6 +318,45 @@ class BuiltInFunction(BaseFunction):
 
     return RTResult().success(result.elements[0] if len(result.elements) == 1 else result)
   execute_eval.arg_names = ["code"]
+
+  def execute_range(self, exec_ctx):
+    from src.values.types.number import Int, Float
+    args = exec_ctx.symbol_table.get("args")
+    items = args.elements if isinstance(args, List) else []
+
+    if len(items) < 1 or len(items) > 3:
+      return RTResult().failure(RTError(
+        self.pos_start, self.pos_end,
+        f"range() takes 1 to 3 arguments, but {len(items)} were given",
+        exec_ctx
+      ))
+
+    for item in items:
+      if not isinstance(item, (Int, Float, Number)):
+        return RTResult().failure(RTError(
+          self.pos_start, self.pos_end,
+          "range() arguments must be numbers",
+          exec_ctx
+        ))
+
+    if len(items) == 1:
+      start_v, stop_v, step_v = 0, int(items[0].value), 1
+    elif len(items) == 2:
+      start_v, stop_v, step_v = int(items[0].value), int(items[1].value), 1
+    else:
+      start_v, stop_v, step_v = int(items[0].value), int(items[1].value), int(items[2].value)
+
+    if step_v == 0:
+      return RTResult().failure(RTError(
+        self.pos_start, self.pos_end,
+        "range() step argument must not be zero",
+        exec_ctx
+      ))
+
+    result = List([Int(i) for i in range(start_v, stop_v, step_v)])
+    result.set_context(exec_ctx)
+    return RTResult().success(result)
+  execute_range.var_arg_name = "args"
 
   def execute_is_null(self, exec_ctx):
     from src.values.types.null import Null

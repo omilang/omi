@@ -143,7 +143,14 @@ class Interpreter:
                     f"'{var_name}' is not defined",
                     context
                 ))
-            
+
+            if hasattr(existing, 'is_const') and existing.is_const:
+                return res.failure(RTError(
+                    node.pos_start, node.pos_end,
+                    f"Cannot reassign constant '{var_name}'",
+                    context
+                ))
+
             ann = None
             if isinstance(existing, Uninitialized) and existing.annotation is not None:
                 ann = existing.annotation
@@ -198,6 +205,8 @@ class Interpreter:
                     value.max_size = ann.max_size
             value.set_annotation(ann)
 
+        if node.is_const:
+            value.is_const = True
         context.symbol_table.set(var_name, value)
         return res.success(value)
 
@@ -469,7 +478,14 @@ class Interpreter:
         if module_path.startswith("omi:"):
             return res.failure(RTError(
                 node.pos_start, node.pos_end,
-                f"Unknown standard library module 'omi:{module_path[4:]}'",
+                f"Unknown standard library module '{module_path}'",
+                context
+            ))
+
+        if module_path.startswith("omi/"):
+            return res.failure(RTError(
+                node.pos_start, node.pos_end,
+                f"Built-in modules use 'omi:...' syntax, not 'omi/...'. Change '{module_path}' to '{module_path.replace('omi/', 'omi:')}'.",
                 context
             ))
 

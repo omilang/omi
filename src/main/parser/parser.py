@@ -1250,6 +1250,48 @@ class Parser:
             if res.error: return res
             return res.success(VarAssignNode(var_name, expr, type_ann))
 
+        if self.current_tok.matches(TT_KEYWORD, "const"):
+            res.register_advancement()
+            self.advance()
+
+            type_ann = None
+            if self.current_tok.type == TT_LT:
+                type_ann = res.register(self.parse_type_annotation())
+                if res.error: return res
+                size_result = self._try_parse_size_constraint(type_ann, res)
+                if isinstance(size_result, ParseResult):
+                    return size_result
+                type_ann = size_result
+            elif self.current_tok.type == TT_LSQUARE:
+                type_ann = res.register(self.parse_array_type_annotation())
+                if res.error: return res
+                size_result = self._try_parse_size_constraint(type_ann, res)
+                if isinstance(size_result, ParseResult):
+                    return size_result
+                type_ann = size_result
+
+            if self.current_tok.type != TT_IDENTIFIER:
+                return res.failure(InvalidSyntaxError(
+                    self.current_tok.pos_start, self.current_tok.pos_end,
+                    "Expected variable name after 'const'"
+                ))
+
+            var_name = self.current_tok
+            res.register_advancement()
+            self.advance()
+
+            if self.current_tok.type != TT_EQ:
+                return res.failure(InvalidSyntaxError(
+                    self.current_tok.pos_start, self.current_tok.pos_end,
+                    "Constants must be initialized. Expected '=' after constant name"
+                ))
+
+            res.register_advancement()
+            self.advance()
+            expr = res.register(self.expr())
+            if res.error: return res
+            return res.success(VarAssignNode(var_name, expr, type_ann, is_const=True))
+
         if self.current_tok.type == TT_IDENTIFIER:
             next_idx = self.tok_idx + 1
             if next_idx < len(self.tokens) and self.tokens[next_idx].type == TT_EQ:
