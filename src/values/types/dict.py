@@ -24,6 +24,11 @@ class Dict(Value):
         copy = Dict(dict(self.entries))
         copy.set_pos(self.pos_start, self.pos_end)
         copy.set_context(self.context)
+        # Preserve type_annotation and type_name for trait conformance
+        if hasattr(self, 'type_annotation'):
+            copy.type_annotation = self.type_annotation
+        if hasattr(self, 'type_name'):
+            copy.type_name = self.type_name
         return copy
 
     def __repr__(self):

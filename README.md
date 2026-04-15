@@ -81,7 +81,7 @@ func<void> greet(name<string>):
   return
 end
 
-var<string> name = user()
+var<string> name = user
 
 greet(name)
 ```

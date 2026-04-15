@@ -34,7 +34,7 @@ class Lexer():
 
             elif self.current_char in DIGITS:
                 tokens.append(self.make_number())
-            elif self.current_char in LETTERS:
+            elif self.current_char in LETTERS or self.current_char == "_":
                 tokens.append(self.make_identifier())
             
             elif self.current_char == '"':
@@ -287,7 +287,8 @@ class Lexer():
     def skip_comment(self):
         self.advance()
 
-        while self.current_char != '\n':
+        while self.current_char is not None and self.current_char != '\n':
             self.advance()
 
-        self.advance()
+        if self.current_char == '\n':
+            self.advance()

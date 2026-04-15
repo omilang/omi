@@ -79,18 +79,6 @@ class SystemBuiltInFunction(StdlibFunction):
         return RTResult().success(Number.null)
     execute_set_env.arg_names = ["name", "value"]
 
-    def execute_platform(self, exec_ctx):
-        return RTResult().success(String(platform.system()))
-    execute_platform.arg_names = []
-
-    def execute_username(self, exec_ctx):
-        try:
-            name = os.getlogin()
-        except OSError:
-            name = os.environ.get("USERNAME", os.environ.get("USER", "unknown"))
-        return RTResult().success(String(name))
-    execute_username.arg_names = []
-
     def execute_exit(self, exec_ctx):
         code = exec_ctx.symbol_table.get("code")
         if isinstance(code, Number) and code.value != 0:
@@ -109,8 +97,17 @@ class SystemBuiltInFunction(StdlibFunction):
 def create_system_module():
     symbol_table = SymbolTable()
 
-    funcs = ["exec", "env", "set_env", "platform", "username", "exit", "cwd"]
+    funcs = ["exec", "env", "set_env", "exit", "cwd"]
     for name in funcs:
         symbol_table.set(name, SystemBuiltInFunction(name))
+
+    # Add platform and username as constants
+    symbol_table.set("platform", String(platform.system()))
+    
+    try:
+        username = os.getlogin()
+    except OSError:
+        username = os.environ.get("USERNAME", os.environ.get("USER", "unknown"))
+    symbol_table.set("username", String(username))
 
     return Module("system", symbol_table)

@@ -21,7 +21,9 @@ KEYWORDS = [
     "as",
     "use",
     "set",
-    "type"
+    "type",
+    "enum",
+    "trait"
 ]
 
 FILE_FORMAT = [
