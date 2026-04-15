@@ -41,6 +41,7 @@ BuiltInFunction.to_string = BuiltInFunction("to_string")
 BuiltInFunction.to_int = BuiltInFunction("to_int")
 BuiltInFunction.to_float = BuiltInFunction("to_float")
 BuiltInFunction.to_bool = BuiltInFunction("to_bool")
+BuiltInFunction.range = BuiltInFunction("range")
 
 global_symbol_table.set("print", BuiltInFunction.print)
 global_symbol_table.set("println", BuiltInFunction.println)
@@ -68,6 +69,7 @@ global_symbol_table.set("append", BuiltInFunction.append)
 global_symbol_table.set("pop", BuiltInFunction.pop)
 global_symbol_table.set("extend", BuiltInFunction.extend)
 global_symbol_table.set("len", BuiltInFunction.len)
+global_symbol_table.set("range", BuiltInFunction.range)
 global_symbol_table.set("eval", BuiltInFunction.eval)
 
 def run(fn, text):

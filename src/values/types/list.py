@@ -83,6 +83,8 @@ class List(Value):
     copy = List(self.elements, self.elem_annotation, self.max_size)
     copy.set_pos(self.pos_start, self.pos_end)
     copy.set_context(self.context)
+    copy.is_const = self.is_const
+    copy.type_annotation = self.type_annotation
     return copy
 
   def __str__(self):

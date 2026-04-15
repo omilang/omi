@@ -1,3 +1,5 @@
+import re
+
 from src.var.token import (
     TT_INT, TT_FLOAT, TT_STRING, TT_FSTRING,
     TT_MUL, TT_DIV,
@@ -44,6 +46,8 @@ from src.nodes.directives.setN import SetDirectiveNode
 from src.nodes.directives.typealiasN import TypeAliasNode
 from src.nodes.types.typeannotation import TypeAnnotationNode, DictTypeAnnotation
 from src.nodes.types.subscript import DictSubscriptNode
+from src.nodes.types.enumdef import EnumDefNode, EnumVariantSignature
+from src.nodes.types.traitdef import TraitDefNode, TraitMethodSignature
 from src.error.message.invalidsyntax import InvalidSyntaxError
 from src.main.parser.result import ParseResult
 
@@ -238,12 +242,59 @@ class Parser:
                 if self.current_tok.type in (TT_IDENTIFIER, TT_KEYWORD):
                     name = name + '.' + self.current_tok.value
                     self.advance()
+
+            if self.current_tok.type == TT_LT:
+                type_args = []
+                self.advance()
+
+                arg = self._parse_single_type()
+                if arg is None:
+                    self.reverse()
+                    return name
+                type_args.append(arg)
+
+                while self.current_tok.type == TT_COMMA:
+                    self.advance()
+                    arg = self._parse_single_type()
+                    if arg is None:
+                        self.reverse()
+                        break
+                    type_args.append(arg)
+
+                while self.current_tok.type == TT_PIPE:
+                    self.advance()
+                    arg = self._parse_single_type()
+                    if arg is None:
+                        self.reverse()
+                        break
+                    type_args.append(arg)
+
+                if self.current_tok.type == TT_GT:
+                    self.advance()
+                    name = f"{name}<{', '.join(type_args)}>"
+
             return name
         if tok.type == TT_STRING:
             val = f'"{tok.value}"'
             self.advance()
             return val
         return None
+
+    def _extract_type_params_from_annotation(self, ann):
+        if ann is None or not ann.type_parts:
+            return []
+        
+        type_str = ann.type_parts[0]
+
+        if '<' in type_str and '>' in type_str:
+            start = type_str.index('<') + 1
+            end = type_str.index('>')
+            params_str = type_str[start:end]
+            params = [p.strip() for p in params_str.split(',')]
+            params = [p for p in params if p]
+            return params
+        
+        return []
 
     def _parse_dict_type_def(self):
         res = ParseResult()
@@ -311,6 +362,152 @@ class Parser:
         self.advance()
 
         return res.success(DictTypeAnnotation(fields, pos_start, pos_end))
+
+    def enum_def(self):
+        res = ParseResult()
+        pos_start = self.current_tok.pos_start.copy()
+
+        if not self.current_tok.matches(TT_KEYWORD, 'enum'):
+            return res.failure(InvalidSyntaxError(
+                self.current_tok.pos_start, self.current_tok.pos_end,
+                "Expected 'enum'"
+            ))
+
+        res.register_advancement()
+        self.advance()
+
+        if self.current_tok.type != TT_IDENTIFIER:
+            return res.failure(InvalidSyntaxError(
+                self.current_tok.pos_start, self.current_tok.pos_end,
+                "Expected enum name after 'enum'"
+            ))
+
+        name_tok = self.current_tok
+        res.register_advancement()
+        self.advance()
+
+        type_params = []
+        if self.current_tok.type == TT_LT:
+            res.register_advancement()
+            self.advance()
+
+            if self.current_tok.type != TT_IDENTIFIER:
+                return res.failure(InvalidSyntaxError(
+                    self.current_tok.pos_start, self.current_tok.pos_end,
+                    "Expected type parameter name after '<'"
+                ))
+
+            type_params.append(self.current_tok.value)
+            res.register_advancement()
+            self.advance()
+
+            while self.current_tok.type == TT_COMMA:
+                res.register_advancement()
+                self.advance()
+
+                if self.current_tok.type != TT_IDENTIFIER:
+                    return res.failure(InvalidSyntaxError(
+                        self.current_tok.pos_start, self.current_tok.pos_end,
+                        "Expected type parameter name after ','"
+                    ))
+
+                type_params.append(self.current_tok.value)
+                res.register_advancement()
+                self.advance()
+
+            if self.current_tok.type != TT_GT:
+                return res.failure(InvalidSyntaxError(
+                    self.current_tok.pos_start, self.current_tok.pos_end,
+                    "Expected '>' to close type parameters"
+                ))
+            res.register_advancement()
+            self.advance()
+
+        if self.current_tok.type != TT_EQ:
+            return res.failure(InvalidSyntaxError(
+                self.current_tok.pos_start, self.current_tok.pos_end,
+                "Expected '=' after enum name"
+            ))
+
+        res.register_advancement()
+        self.advance()
+
+        if self.current_tok.type != TT_LBRACE:
+            return res.failure(InvalidSyntaxError(
+                self.current_tok.pos_start, self.current_tok.pos_end,
+                "Expected '{' after '=' in enum definition"
+            ))
+
+        res.register_advancement()
+        self.advance()
+
+        variants = []
+
+        while self.current_tok.type == TT_NEWLINE:
+            res.register_advancement()
+            self.advance()
+
+        while self.current_tok.type != TT_RBRACE and self.current_tok.type != TT_E0F:
+            if self.current_tok.type not in (TT_IDENTIFIER, TT_KEYWORD):
+                return res.failure(InvalidSyntaxError(
+                    self.current_tok.pos_start, self.current_tok.pos_end,
+                    "Expected variant name in enum definition"
+                ))
+
+            variant_name_tok = self.current_tok
+            variant_name = variant_name_tok.value
+            if not re.match(r'^[A-Z][a-zA-Z0-9_]*$', variant_name):
+                return res.failure(InvalidSyntaxError(
+                    variant_name_tok.pos_start, variant_name_tok.pos_end,
+                    "Enum variant names must start with an uppercase letter and use only letters, numbers, and underscores"
+                ))
+
+            res.register_advancement()
+            self.advance()
+
+            payload_type = None
+            if self.current_tok.type == TT_LPAREN:
+                res.register_advancement()
+                self.advance()
+
+                payload_part = self._parse_single_type()
+                if payload_part is None:
+                    return res.failure(InvalidSyntaxError(
+                        self.current_tok.pos_start, self.current_tok.pos_end,
+                        "Expected payload type in enum variant"
+                    ))
+
+                payload_type = TypeAnnotationNode([payload_part], variant_name_tok.pos_start, self.current_tok.pos_start.copy())
+
+                if self.current_tok.type != TT_RPAREN:
+                    return res.failure(InvalidSyntaxError(
+                        self.current_tok.pos_start, self.current_tok.pos_end,
+                        "Expected ')' after enum variant payload type"
+                    ))
+                res.register_advancement()
+                self.advance()
+
+            variants.append(EnumVariantSignature(variant_name, payload_type, variant_name_tok.pos_start, variant_name_tok.pos_end))
+
+            if self.current_tok.type == TT_COMMA:
+                res.register_advancement()
+                self.advance()
+
+            while self.current_tok.type == TT_NEWLINE:
+                res.register_advancement()
+                self.advance()
+
+        if self.current_tok.type != TT_RBRACE:
+            return res.failure(InvalidSyntaxError(
+                self.current_tok.pos_start, self.current_tok.pos_end,
+                "Expected '}' to close enum definition"
+            ))
+
+        pos_end = self.current_tok.pos_end.copy()
+        res.register_advancement()
+        self.advance()
+
+        return res.success(EnumDefNode(name_tok, variants, pos_start, pos_end, type_params))
     
     def parse(self):
         res = self.statements()
@@ -1141,6 +1338,43 @@ class Parser:
             res.register_advancement()
             self.advance()
 
+            type_params = []
+            if self.current_tok.type == TT_LT:
+                res.register_advancement()
+                self.advance()
+
+                if self.current_tok.type != TT_IDENTIFIER:
+                    return res.failure(InvalidSyntaxError(
+                        self.current_tok.pos_start, self.current_tok.pos_end,
+                        "Expected type parameter name after '<'"
+                    ))
+
+                type_params.append(self.current_tok.value)
+                res.register_advancement()
+                self.advance()
+
+                while self.current_tok.type == TT_COMMA:
+                    res.register_advancement()
+                    self.advance()
+
+                    if self.current_tok.type != TT_IDENTIFIER:
+                        return res.failure(InvalidSyntaxError(
+                            self.current_tok.pos_start, self.current_tok.pos_end,
+                            "Expected type parameter name after ','"
+                        ))
+
+                    type_params.append(self.current_tok.value)
+                    res.register_advancement()
+                    self.advance()
+
+                if self.current_tok.type != TT_GT:
+                    return res.failure(InvalidSyntaxError(
+                        self.current_tok.pos_start, self.current_tok.pos_end,
+                        "Expected '>' to close type parameters"
+                    ))
+                res.register_advancement()
+                self.advance()
+
             if self.current_tok.type != TT_EQ:
                 return res.failure(InvalidSyntaxError(
                     self.current_tok.pos_start, self.current_tok.pos_end,
@@ -1152,6 +1386,7 @@ class Parser:
             if self.current_tok.type == TT_LBRACE:
                 dict_ann = res.register(self._parse_dict_type_def())
                 if res.error: return res
+                dict_ann.type_params = type_params
                 return res.success(TypeAliasNode(name_tok, dict_ann, pos_start, self.current_tok.pos_start.copy()))
 
             type_parts = []
@@ -1184,8 +1419,18 @@ class Parser:
                     if "null" not in type_parts:
                         type_parts.append("null")
 
-            type_ann = TypeAnnotationNode(type_parts, pos_start, self.current_tok.pos_start.copy())
+            type_ann = TypeAnnotationNode(type_parts, pos_start, self.current_tok.pos_start.copy(), type_params=type_params)
             return res.success(TypeAliasNode(name_tok, type_ann, pos_start, self.current_tok.pos_start.copy()))
+
+        if self.current_tok.matches(TT_KEYWORD, 'enum'):
+            enum_node = res.register(self.enum_def())
+            if res.error: return res
+            return res.success(enum_node)
+        
+        if self.current_tok.matches(TT_KEYWORD, 'trait'):
+            trait_node = res.register(self.trait_def())
+            if res.error: return res
+            return res.success(trait_node)
         
         if self.current_tok.matches(TT_KEYWORD, 'continue'):
             res.register_advancement()
@@ -1250,6 +1495,48 @@ class Parser:
             if res.error: return res
             return res.success(VarAssignNode(var_name, expr, type_ann))
 
+        if self.current_tok.matches(TT_KEYWORD, "const"):
+            res.register_advancement()
+            self.advance()
+
+            type_ann = None
+            if self.current_tok.type == TT_LT:
+                type_ann = res.register(self.parse_type_annotation())
+                if res.error: return res
+                size_result = self._try_parse_size_constraint(type_ann, res)
+                if isinstance(size_result, ParseResult):
+                    return size_result
+                type_ann = size_result
+            elif self.current_tok.type == TT_LSQUARE:
+                type_ann = res.register(self.parse_array_type_annotation())
+                if res.error: return res
+                size_result = self._try_parse_size_constraint(type_ann, res)
+                if isinstance(size_result, ParseResult):
+                    return size_result
+                type_ann = size_result
+
+            if self.current_tok.type != TT_IDENTIFIER:
+                return res.failure(InvalidSyntaxError(
+                    self.current_tok.pos_start, self.current_tok.pos_end,
+                    "Expected variable name after 'const'"
+                ))
+
+            var_name = self.current_tok
+            res.register_advancement()
+            self.advance()
+
+            if self.current_tok.type != TT_EQ:
+                return res.failure(InvalidSyntaxError(
+                    self.current_tok.pos_start, self.current_tok.pos_end,
+                    "Constants must be initialized. Expected '=' after constant name"
+                ))
+
+            res.register_advancement()
+            self.advance()
+            expr = res.register(self.expr())
+            if res.error: return res
+            return res.success(VarAssignNode(var_name, expr, type_ann, is_const=True))
+
         if self.current_tok.type == TT_IDENTIFIER:
             next_idx = self.tok_idx + 1
             if next_idx < len(self.tokens) and self.tokens[next_idx].type == TT_EQ:
@@ -1309,10 +1596,12 @@ class Parser:
         res.register_advancement()
         self.advance()
 
+        func_type_params = []
         return_type = None
         if self.current_tok.type == TT_LT:
             return_type = res.register(self.parse_type_annotation())
             if res.error: return res
+            func_type_params = self._extract_type_params_from_annotation(return_type)
 
         if self.current_tok.type == TT_IDENTIFIER:
             var_name_tok = self.current_tok
@@ -1419,6 +1708,7 @@ class Parser:
                 return_type,
                 arg_types,
                 arg_defaults,
+                func_type_params,
             ))
 
         if self.current_tok.type != TT_COLON:
@@ -1454,6 +1744,7 @@ class Parser:
                 return_type,
                 arg_types,
                 arg_defaults,
+                func_type_params,
             ))
 
         body = res.register(self.expr())
@@ -1468,6 +1759,234 @@ class Parser:
             arg_types,
             arg_defaults,
         ))
+
+    def trait_def(self):
+        """Parse trait definition: trait NAME<T> = { func<...> method(...) }"""
+        res = ParseResult()
+        
+        if not self.current_tok.matches(TT_KEYWORD, 'trait'):
+            return res.failure(InvalidSyntaxError(
+                self.current_tok.pos_start, self.current_tok.pos_end,
+                "Expected 'trait'"
+            ))
+        
+        res.register_advancement()
+        self.advance()
+        
+        # Parse trait name
+        if self.current_tok.type != TT_IDENTIFIER:
+            return res.failure(InvalidSyntaxError(
+                self.current_tok.pos_start, self.current_tok.pos_end,
+                "Expected trait name after 'trait'"
+            ))
+        
+        name_tok = self.current_tok
+        trait_name = name_tok.value
+        pos_start = name_tok.pos_start.copy()
+        res.register_advancement()
+        self.advance()
+        
+        type_params = []
+        if self.current_tok.type == TT_LT:
+            res.register_advancement()
+            self.advance()
+
+            if self.current_tok.type != TT_IDENTIFIER:
+                return res.failure(InvalidSyntaxError(
+                    self.current_tok.pos_start, self.current_tok.pos_end,
+                    "Expected type parameter name after '<'"
+                ))
+
+            type_params.append(self.current_tok.value)
+            res.register_advancement()
+            self.advance()
+
+            while self.current_tok.type == TT_COMMA:
+                res.register_advancement()
+                self.advance()
+
+                if self.current_tok.type != TT_IDENTIFIER:
+                    return res.failure(InvalidSyntaxError(
+                        self.current_tok.pos_start, self.current_tok.pos_end,
+                        "Expected type parameter name after ','"
+                    ))
+
+                type_params.append(self.current_tok.value)
+                res.register_advancement()
+                self.advance()
+
+            if self.current_tok.type != TT_GT:
+                return res.failure(InvalidSyntaxError(
+                    self.current_tok.pos_start, self.current_tok.pos_end,
+                    "Expected '>' to close type parameters"
+                ))
+            res.register_advancement()
+            self.advance()
+        
+        # Expect '='
+        if self.current_tok.type != TT_EQ:
+            return res.failure(InvalidSyntaxError(
+                self.current_tok.pos_start, self.current_tok.pos_end,
+                "Expected '=' after trait name"
+            ))
+        res.register_advancement()
+        self.advance()
+        
+        # Expect '{'
+        if self.current_tok.type != TT_LBRACE:
+            return res.failure(InvalidSyntaxError(
+                self.current_tok.pos_start, self.current_tok.pos_end,
+                "Expected '{' after '=' in trait definition"
+            ))
+        res.register_advancement()
+        self.advance()
+        
+        # Skip newlines
+        while self.current_tok.type == TT_NEWLINE:
+            res.register_advancement()
+            self.advance()
+        
+        # Parse method signatures
+        methods = []
+        while self.current_tok.type != TT_RBRACE and self.current_tok.type != TT_E0F:
+            # Each method must start with 'func'
+            if not self.current_tok.matches(TT_KEYWORD, 'func'):
+                return res.failure(InvalidSyntaxError(
+                    self.current_tok.pos_start, self.current_tok.pos_end,
+                    "Expected 'func' in trait definition"
+                ))
+            
+            res.register_advancement()
+            self.advance()
+            
+            # Parse return type
+            if self.current_tok.type != TT_LT:
+                return res.failure(InvalidSyntaxError(
+                    self.current_tok.pos_start, self.current_tok.pos_end,
+                    "Expected '<' for return type annotation in trait method"
+                ))
+            
+            return_type = res.register(self.parse_type_annotation())
+            if res.error: return res
+            
+            # Parse method name
+            if self.current_tok.type != TT_IDENTIFIER:
+                return res.failure(InvalidSyntaxError(
+                    self.current_tok.pos_start, self.current_tok.pos_end,
+                    "Expected method name"
+                ))
+            
+            method_name = self.current_tok.value
+            res.register_advancement()
+            self.advance()
+            
+            # Parse parameters
+            if self.current_tok.type != TT_LPAREN:
+                return res.failure(InvalidSyntaxError(
+                    self.current_tok.pos_start, self.current_tok.pos_end,
+                    "Expected '(' after method name"
+                ))
+            
+            res.register_advancement()
+            self.advance()
+            
+            arg_types = []
+            arg_names = []
+            
+            # Parse parameter list
+            if self.current_tok.type != TT_RPAREN:
+                # First parameter
+                if self.current_tok.type != TT_IDENTIFIER:
+                    return res.failure(InvalidSyntaxError(
+                        self.current_tok.pos_start, self.current_tok.pos_end,
+                        "Expected parameter name"
+                    ))
+                
+                param_name = self.current_tok.value
+                arg_names.append(param_name)
+                res.register_advancement()
+                self.advance()
+                
+                # Parse parameter type
+                if self.current_tok.type != TT_LT:
+                    return res.failure(InvalidSyntaxError(
+                        self.current_tok.pos_start, self.current_tok.pos_end,
+                        "Expected '<' for parameter type annotation"
+                    ))
+                
+                param_type = res.register(self.parse_type_annotation())
+                if res.error: return res
+                arg_types.append(param_type)
+                
+                # Parse more parameters
+                while self.current_tok.type == TT_COMMA:
+                    res.register_advancement()
+                    self.advance()
+                    
+                    if self.current_tok.type != TT_IDENTIFIER:
+                        return res.failure(InvalidSyntaxError(
+                            self.current_tok.pos_start, self.current_tok.pos_end,
+                            "Expected parameter name"
+                        ))
+                    
+                    param_name = self.current_tok.value
+                    arg_names.append(param_name)
+                    res.register_advancement()
+                    self.advance()
+                    
+                    if self.current_tok.type != TT_LT:
+                        return res.failure(InvalidSyntaxError(
+                            self.current_tok.pos_start, self.current_tok.pos_end,
+                            "Expected '<' for parameter type annotation"
+                        ))
+                    
+                    param_type = res.register(self.parse_type_annotation())
+                    if res.error: return res
+                    arg_types.append(param_type)
+            
+            # Expect closing ')'
+            if self.current_tok.type != TT_RPAREN:
+                return res.failure(InvalidSyntaxError(
+                    self.current_tok.pos_start, self.current_tok.pos_end,
+                    "Expected ')' after method parameters"
+                ))
+            
+            res.register_advancement()
+            self.advance()
+            
+            # Create method signature
+            method_sig = TraitMethodSignature(
+                method_name,
+                return_type,
+                arg_types,
+                arg_names
+            )
+            methods.append(method_sig)
+            
+            # Skip optional comma
+            if self.current_tok.type == TT_COMMA:
+                res.register_advancement()
+                self.advance()
+            
+            # Skip newlines
+            while self.current_tok.type == TT_NEWLINE:
+                res.register_advancement()
+                self.advance()
+        
+        # Expect closing '}'
+        if self.current_tok.type != TT_RBRACE:
+            return res.failure(InvalidSyntaxError(
+                self.current_tok.pos_start, self.current_tok.pos_end,
+                "Expected '}' to close trait definition"
+            ))
+        
+        pos_end = self.current_tok.pos_end.copy()
+        res.register_advancement()
+        self.advance()
+        
+        # Create and return TraitDefNode
+        trait_node = TraitDefNode(name_tok, methods, pos_start, pos_end, type_params)
+        return res.success(trait_node)
 
     def bin_op(self, func_a, ops, func_b=None): 
         if func_b == None:

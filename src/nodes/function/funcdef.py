@@ -1,6 +1,6 @@
 class FuncDefNode:
 	def __init__(self, var_name_tok, arg_name_toks, body_node, should_auto_return,
-	             return_type=None, arg_types=None, arg_defaults=None):
+	             return_type=None, arg_types=None, arg_defaults=None, type_params=None):
 		self.var_name_tok = var_name_tok
 		self.arg_name_toks = arg_name_toks
 		self.body_node = body_node
@@ -8,6 +8,7 @@ class FuncDefNode:
 		self.return_type = return_type
 		self.arg_types = arg_types or []
 		self.arg_defaults = arg_defaults or [None] * len(arg_name_toks)
+		self.type_params = type_params or []  # Generic type parameters like ["T"] or ["T", "E"]
 
 		if self.var_name_tok:
 			self.pos_start = self.var_name_tok.pos_start

@@ -1,5 +1,6 @@
 KEYWORDS = [
     "var",
+    "const",
     "and",
     "or",
     "is",
@@ -20,7 +21,9 @@ KEYWORDS = [
     "as",
     "use",
     "set",
-    "type"
+    "type",
+    "enum",
+    "trait"
 ]
 
 FILE_FORMAT = [

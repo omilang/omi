@@ -10,6 +10,7 @@ class Value:
         self.set_pos()
         self.set_context()
         self.type_annotation = None
+        self.is_const = False
 
     def set_pos(self, pos_start=None, pos_end=None):
         self.pos_start = pos_start

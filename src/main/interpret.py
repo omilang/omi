@@ -16,6 +16,7 @@ from src.error.message.rt import RTError
 from src.var.builtin import BUILTIN_MODULES
 from src.var.keyword import FILE_FORMAT
 from src.run.typecheck import check_type
+from src.values.function.enumvariant import EnumVariantConstructor
 from src.var.token import (
     TT_MUL, TT_DIV,
     TT_PLUS, TT_MINUS,
@@ -143,7 +144,14 @@ class Interpreter:
                     f"'{var_name}' is not defined",
                     context
                 ))
-            
+
+            if hasattr(existing, 'is_const') and existing.is_const:
+                return res.failure(RTError(
+                    node.pos_start, node.pos_end,
+                    f"Cannot reassign constant '{var_name}'",
+                    context
+                ))
+
             ann = None
             if isinstance(existing, Uninitialized) and existing.annotation is not None:
                 ann = existing.annotation
@@ -167,6 +175,16 @@ class Interpreter:
                         )
                     if ann.max_size is not None:
                         value.max_size = ann.max_size
+                
+                from src.values.types.dict import Dict
+                from src.nodes.types.typeannotation import DictTypeAnnotation
+                if isinstance(value, Dict):
+                    if not isinstance(ann, DictTypeAnnotation) and hasattr(ann, 'type_parts') and ann.type_parts:
+                        type_name = ann.type_parts[0]
+                        if '<' in type_name:
+                            type_name = type_name[:type_name.index('<')]
+                        value.type_name = type_name
+                
                 value.set_annotation(ann)
             context.symbol_table.set(var_name, value)
             return res.success(value)
@@ -196,8 +214,19 @@ class Interpreter:
                     )
                 if ann.max_size is not None:
                     value.max_size = ann.max_size
+            
+            from src.values.types.dict import Dict
+            from src.nodes.types.typeannotation import DictTypeAnnotation
+            if isinstance(value, Dict):
+                if not isinstance(ann, DictTypeAnnotation) and hasattr(ann, 'type_parts') and ann.type_parts:
+                    type_name = ann.type_parts[0]
+                    if '<' in type_name:
+                        type_name = type_name[:type_name.index('<')]
+                    value.type_name = type_name
+            
             value.set_annotation(ann)
-
+        if node.is_const:
+            value.is_const = True
         context.symbol_table.set(var_name, value)
         return res.success(value)
 
@@ -214,6 +243,7 @@ class Interpreter:
             result, error = left.subbed_by(right)
         elif node.op_tok.type == TT_MUL:
             result, error = left.multed_by(right)
+
         elif node.op_tok.type == TT_DIV:
             result, error = left.dived_by(right)
         elif node.op_tok.type == TT_POW:
@@ -426,8 +456,18 @@ class Interpreter:
         
         if node.var_name_tok:
             context.symbol_table.set(func_name, func_value)
+            if len(node.arg_types) > 0 and node.arg_types[0] is not None:
+                first_arg_type = node.arg_types[0]
+                type_parts = first_arg_type.type_parts if hasattr(first_arg_type, 'type_parts') else []
+                if type_parts:
+                    base_type_str = type_parts[0]
+                    if '<' in base_type_str:
+                        base_type_str = base_type_str[:base_type_str.index('<')]
+                    method_key = f"__method_{base_type_str}_{func_name}__"
+                    context.symbol_table.set(method_key, func_value)
 
         return res.success(func_value)
+
 
     def visit_CallNode(self, node, context):
         res = RTResult()
@@ -469,7 +509,14 @@ class Interpreter:
         if module_path.startswith("omi:"):
             return res.failure(RTError(
                 node.pos_start, node.pos_end,
-                f"Unknown standard library module 'omi:{module_path[4:]}'",
+                f"Unknown standard library module '{module_path}'",
+                context
+            ))
+
+        if module_path.startswith("omi/"):
+            return res.failure(RTError(
+                node.pos_start, node.pos_end,
+                f"Built-in modules use 'omi:...' syntax, not 'omi/...'. Change '{module_path}' to '{module_path.replace('omi/', 'omi:')}'.",
                 context
             ))
 
@@ -552,6 +599,9 @@ class Interpreter:
             if key.startswith("__type_") and key.endswith("__"):
                 type_name = key[7:-2]
                 context.symbol_table.set(f"__type_{alias}.{type_name}__", val)
+            if key.startswith("__trait_") and key.endswith("__"):
+                trait_name = key[8:-2]
+                context.symbol_table.set(f"__trait_{alias}.{trait_name}__", val)
 
         return res.success(Number.null)
 
@@ -709,6 +759,31 @@ class Interpreter:
         context.symbol_table.set(f"__type_{alias_name}__", node.type_annotation)
         return RTResult().success(Number.null)
 
+    def visit_EnumDefNode(self, node, context):
+        from src.run.typecheck import build_enum_annotation
+        from src.values.types.string import String
+
+        enum_annotation = build_enum_annotation(node)
+        context.symbol_table.set(f"__type_{node.name}__", enum_annotation)
+
+        for variant in node.variants:
+            if variant.payload_type is None:
+                value = Dict({"__tag": String(variant.name)}).set_context(context).set_pos(node.pos_start, node.pos_end)
+                value.set_annotation(enum_annotation)
+                value.type_name = node.name
+                context.symbol_table.set(variant.name, value)
+            else:
+                constructor = EnumVariantConstructor(node.name, variant.name, variant.payload_type, enum_annotation)
+                constructor.set_context(context).set_pos(node.pos_start, node.pos_end)
+                context.symbol_table.set(variant.name, constructor)
+
+        return RTResult().success(Number.null)
+
+    def visit_TraitDefNode(self, node, context):
+        trait_name = node.name
+        context.symbol_table.set(f"__trait_{trait_name}__", node)
+        return RTResult().success(Number.null)
+
     def visit_SetDirectiveNode(self, node, context):
         lhs = node.lhs
         rhs = node.rhs
@@ -716,6 +791,11 @@ class Interpreter:
         resolved_type = context.symbol_table.get(type_key)
         if resolved_type is not None:
             context.symbol_table.set(f"__type_{rhs}__", resolved_type)
+            return RTResult().success(Number.null)
+        trait_key = f"__trait_{lhs}__"
+        resolved_trait = context.symbol_table.get(trait_key)
+        if resolved_trait is not None:
+            context.symbol_table.set(f"__trait_{rhs}__", resolved_trait)
             return RTResult().success(Number.null)
         val = context.symbol_table.get(lhs)
         if val is not None:
