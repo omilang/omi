@@ -8,6 +8,7 @@ from src.values.types.boolean import Boolean
 from src.values.types.null import Null
 from src.values.function.buildin import BuiltInFunction
 from src.preprocessor import process
+from src.run.async_runtime import ensure_event_loop, run_pending_tasks
 import src.var.flags as flags
 
 global_symbol_table = SymbolTable()
@@ -72,11 +73,14 @@ global_symbol_table.set("len", BuiltInFunction.len)
 global_symbol_table.set("range", BuiltInFunction.range)
 global_symbol_table.set("eval", BuiltInFunction.eval)
 
-def run(fn, text):
-    flags.debug = False
-    flags.noecho = False
-    flags.eval_enabled = False
-    flags.notypes = False
+def run(fn, text, preserve_flags=False):
+    if not preserve_flags:
+        flags.debug = False
+        flags.noecho = False
+        flags.eval_enabled = False
+        flags.notypes = False
+        flags.repl_output_emitted = False
+        flags.repl_output_ended_with_newline = True
 
     clean_text = process(text)
 
@@ -91,7 +95,20 @@ def run(fn, text):
     interpreter = Interpreter()
     context = Context("<program>")
     context.symbol_table = global_symbol_table
+    loop = ensure_event_loop(context)
     result = interpreter.visit(ast.node, context)
+
+    pending_err = None
+    if result.error is None and result.signal != "exception":
+        pending_err = run_pending_tasks(context)
+
+    if loop is not None and not loop.is_closed():
+        loop.close()
+
+    if result.signal == "exception" and result.exception_data is not None:
+        return None, result.exception_data, {}
+    if pending_err is not None:
+        return None, pending_err, {}
 
     file_flags = {
         'debug': flags.debug,

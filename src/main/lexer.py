@@ -29,7 +29,7 @@ class Lexer():
             elif self.current_char in ";\n":
                 tokens.append(Token(TT_NEWLINE, pos_start=self.pos))
                 self.advance()
-            elif self.current_char in "//":
+            elif self.current_char == "/" and self.pos.idx + 1 < len(self.text) and self.text[self.pos.idx + 1] == "/":
                 self.skip_comment()
 
             elif self.current_char in DIGITS:

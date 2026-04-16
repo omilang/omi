@@ -11,6 +11,7 @@ def _build_type_map():
     from src.values.types.null import Null
     from src.values.types.void import Void
     from src.values.function.base import BaseFunction
+    from src.values.future import FutureValue
 
     return {
         "int":    lambda v: isinstance(v, Int),
@@ -22,6 +23,7 @@ def _build_type_map():
         "bool":   lambda v: isinstance(v, Boolean),
         "func":   lambda v: isinstance(v, BaseFunction),
         "call":   lambda v: isinstance(v, BaseFunction),
+        "future": lambda v: isinstance(v, FutureValue),
         "null":   lambda v: isinstance(v, Null),
         "void":   lambda v: isinstance(v, Void),
         "every":  lambda v: True,
@@ -253,7 +255,7 @@ def check_type(value, type_annotation, context, pos_start, pos_end):
             specific_err = err
             continue
 
-        checker = type_map.get(part)
+        checker = type_map.get(part) or type_map.get(base_type)
         if checker and checker(value):
             return None
 
@@ -309,6 +311,7 @@ def _type_name(value):
     from src.values.types.null import Null
     from src.values.types.void import Void
     from src.values.function.base import BaseFunction
+    from src.values.future import FutureValue
 
     if isinstance(value, Boolean):
         return "bool"
@@ -328,6 +331,8 @@ def _type_name(value):
         return "dict"
     if isinstance(value, BaseFunction):
         return "call"
+    if isinstance(value, FutureValue):
+        return "future"
     return type(value).__name__.lower()
 
 

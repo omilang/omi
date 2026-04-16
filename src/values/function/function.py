@@ -6,11 +6,12 @@ from src.run.typecheck import check_type
 
 class Function(BaseFunction):
 	def __init__(self, name, body_node, arg_names, should_auto_return,
-	             return_type=None, arg_types=None, arg_defaults=None):
+	             return_type=None, arg_types=None, arg_defaults=None, is_async=False):
 		super().__init__(name)
 		self.body_node = body_node
 		self.arg_names = arg_names
 		self.should_auto_return = should_auto_return
+		self.is_async = is_async
 		self.return_type = return_type
 		self.arg_types = arg_types or [] 
 		self.arg_defaults = arg_defaults or [None] * len(arg_names)
@@ -21,6 +22,7 @@ class Function(BaseFunction):
 		res = RTResult()
 		interpreter = Interpreter.Interpreter()
 		exec_ctx = self.generate_new_context()
+		exec_ctx.in_async_function = self.is_async
 		kwargs = kwargs or {}
 
 		res.register(self.resolve_args(
@@ -72,9 +74,15 @@ class Function(BaseFunction):
 
 		return res.success(ret_value)
 
+	async def execute_async(self, args, kwargs=None):
+		res = self.execute(args, kwargs)
+		if res.error:
+			raise res.error
+		return res.value
+
 	def copy(self):
 		copy = Function(self.name, self.body_node, self.arg_names, self.should_auto_return,
-		                self.return_type, self.arg_types, self.arg_defaults)
+		                self.return_type, self.arg_types, self.arg_defaults, self.is_async)
 		copy.set_context(self.context)
 		copy.set_pos(self.pos_start, self.pos_end)
 		return copy

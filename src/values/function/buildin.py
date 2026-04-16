@@ -84,6 +84,8 @@ class BuiltInFunction(BaseFunction):
       return
     text = sep.join(str(value) for value in values)
     print(text, end=end)
+    flags.repl_output_emitted = True
+    flags.repl_output_ended_with_newline = str(end).endswith("\n")
 
   def execute_print(self, exec_ctx):
     value = exec_ctx.symbol_table.get("value")
@@ -306,7 +308,7 @@ class BuiltInFunction(BaseFunction):
 
     code = code.value
 
-    result, error, _ = run.run("<eval>", code)
+    result, error, _ = run.run("<eval>", code, preserve_flags=True)
     
     if error:
       return RTResult().failure(RTError(

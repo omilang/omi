@@ -1,8 +1,9 @@
 class CallNode:
-	def __init__(self, node_to_call, arg_nodes, kwarg_nodes=None):
+	def __init__(self, node_to_call, arg_nodes, kwarg_nodes=None, is_async=False):
 		self.node_to_call = node_to_call
 		self.arg_nodes = arg_nodes
 		self.kwarg_nodes = kwarg_nodes or {}
+		self.is_async = is_async
 
 		self.pos_start = self.node_to_call.pos_start
 
