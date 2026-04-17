@@ -19,6 +19,7 @@ class FutureValue(Value):
         self._result = None
         self._error = None
         self._done = False
+        self._cancelled = False
 
     def schedule(self, loop, coro):
         self._task = loop.create_task(coro)
@@ -36,12 +37,20 @@ class FutureValue(Value):
         return self
 
     def is_done(self):
+        if self._cancelled:
+            return True
         if self._task is not None:
             return self._task.done()
         return self._done
 
+    def cancel(self):
+        self._cancelled = True
+        if self._task is not None and not self._task.done():
+            self._task.cancel()
+        return self
+
     def run_deferred(self, context, pos_start, pos_end):
-        if self._done:
+        if self._done or self._cancelled:
             return
         if self._callback is None:
             return
@@ -53,6 +62,8 @@ class FutureValue(Value):
             self._done = True
 
     def result(self):
+        if self._cancelled:
+            return None
         if self._task is None:
             if not self._done or self._error is not None:
                 return None
@@ -77,19 +88,23 @@ class FutureValue(Value):
         )
 
     def get_error(self, context, pos_start=None, pos_end=None):
+        if self._cancelled:
+            return None
         if self._task is None:
             return self._error
 
         if self._task is None or not self._task.done():
             return None
         if self._task.cancelled():
-            return RTError(pos_start, pos_end, "Async task was cancelled", context)
+            return None
         exc = self._task.exception()
         if exc is None:
             return None
         return self._to_runtime_error(exc, context, pos_start, pos_end)
 
     def await_value(self, loop, context, pos_start, pos_end):
+        if self._cancelled:
+            return None, RTError(pos_start, pos_end, "Async task was cancelled", context)
         if self._task is None:
             if not self._done:
                 self.run_deferred(context, pos_start, pos_end)
@@ -109,6 +124,8 @@ class FutureValue(Value):
                         context,
                     )
                 loop.run_until_complete(asyncio.shield(self._task))
+            except asyncio.CancelledError:
+                return None, RTError(pos_start, pos_end, "Async task was cancelled", context)
             except Exception as exc:
                 return None, self._to_runtime_error(exc, context, pos_start, pos_end)
 
@@ -125,6 +142,7 @@ class FutureValue(Value):
         copy._result = self._result
         copy._error = self._error
         copy._done = self._done
+        copy._cancelled = self._cancelled
         copy.set_context(self.context)
         copy.set_pos(self.pos_start, self.pos_end)
         return copy

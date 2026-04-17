@@ -1,8 +1,9 @@
 class TryNode:
-    def __init__(self, try_body, catch_var_tok, catch_body, pos_start, pos_end):
+    def __init__(self, try_body, catch_var_tok, catch_body, final_body, pos_start, pos_end):
         self.try_body = try_body
         self.catch_var_tok = catch_var_tok
         self.catch_body = catch_body
+        self.final_body = final_body
         self.pos_start = pos_start
         self.pos_end = pos_end
 

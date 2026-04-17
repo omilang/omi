@@ -12,4 +12,9 @@ class Context:
             self.task_queue = []
             self.event_loop = None
 
+        if parent is not None and hasattr(parent, "async_group_stack"):
+            self.async_group_stack = parent.async_group_stack
+        else:
+            self.async_group_stack = []
+
         self.in_async_function = False

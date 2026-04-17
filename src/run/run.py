@@ -10,6 +10,7 @@ from src.values.function.buildin import BuiltInFunction
 from src.preprocessor import process
 from src.run.async_runtime import ensure_event_loop, run_pending_tasks
 import src.var.flags as flags
+import asyncio
 
 global_symbol_table = SymbolTable()
 global_symbol_table.set("null", Null())
@@ -36,6 +37,7 @@ BuiltInFunction.pop = BuiltInFunction("pop")
 BuiltInFunction.extend = BuiltInFunction("extend")
 BuiltInFunction.len = BuiltInFunction("len")
 BuiltInFunction.eval = BuiltInFunction("eval")
+BuiltInFunction.cancel = BuiltInFunction("cancel")
 BuiltInFunction.is_null = BuiltInFunction("is_null")
 BuiltInFunction.typeof = BuiltInFunction("typeof")
 BuiltInFunction.to_string = BuiltInFunction("to_string")
@@ -72,6 +74,7 @@ global_symbol_table.set("extend", BuiltInFunction.extend)
 global_symbol_table.set("len", BuiltInFunction.len)
 global_symbol_table.set("range", BuiltInFunction.range)
 global_symbol_table.set("eval", BuiltInFunction.eval)
+global_symbol_table.set("cancel", BuiltInFunction.cancel)
 
 def run(fn, text, preserve_flags=False):
     if not preserve_flags:
@@ -79,6 +82,7 @@ def run(fn, text, preserve_flags=False):
         flags.noecho = False
         flags.eval_enabled = False
         flags.notypes = False
+        flags.noasync = False
         flags.repl_output_emitted = False
         flags.repl_output_ended_with_newline = True
 
@@ -103,6 +107,11 @@ def run(fn, text, preserve_flags=False):
         pending_err = run_pending_tasks(context)
 
     if loop is not None and not loop.is_closed():
+        pending = [task for task in asyncio.all_tasks(loop) if not task.done()]
+        if pending:
+            for task in pending:
+                task.cancel()
+            loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
         loop.close()
 
     if result.signal == "exception" and result.exception_data is not None:
@@ -114,5 +123,6 @@ def run(fn, text, preserve_flags=False):
         'debug': flags.debug,
         'noecho': flags.noecho,
         'eval': flags.eval_enabled,
+        'noasync': flags.noasync,
     }
     return result.value, result.error, file_flags

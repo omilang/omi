@@ -10,6 +10,7 @@ KEYWORDS = [
     "else",
     "try",
     "catch",
+    "final",
     "match",
     "case",
     "for",

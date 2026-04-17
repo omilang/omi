@@ -23,6 +23,10 @@ def register_future(context, future):
         root.task_queue = []
     root.task_queue.append(future)
 
+    group_stack = getattr(root, "async_group_stack", [])
+    if group_stack:
+        group_stack[-1].add_future(future)
+
 
 def run_pending_tasks(context):
     root = _root_context(context)

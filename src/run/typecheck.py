@@ -12,6 +12,7 @@ def _build_type_map():
     from src.values.types.void import Void
     from src.values.function.base import BaseFunction
     from src.values.future import FutureValue
+    from src.stdlib.http import HTTPResponse
 
     return {
         "int":    lambda v: isinstance(v, Int),
@@ -24,6 +25,7 @@ def _build_type_map():
         "func":   lambda v: isinstance(v, BaseFunction),
         "call":   lambda v: isinstance(v, BaseFunction),
         "future": lambda v: isinstance(v, FutureValue),
+        "httpresponse": lambda v: isinstance(v, HTTPResponse),
         "null":   lambda v: isinstance(v, Null),
         "void":   lambda v: isinstance(v, Void),
         "every":  lambda v: True,
@@ -38,7 +40,6 @@ def _extract_generic_args_from_type_str(type_str):
     end = type_str.rindex('>')
     base_type = type_str[:start]
     args_str = type_str[start+1:end]
-    # Split by comma but handle nested types
     args = []
     current = ""
     depth = 0
@@ -65,7 +66,6 @@ def resolve_generics(annotation, type_map):
     
     from src.nodes.types.typeannotation import TypeAnnotationNode, DictTypeAnnotation
     
-    # Handle DictTypeAnnotation
     if isinstance(annotation, DictTypeAnnotation):
         resolved_fields = {}
         for field_name, field_ann in annotation.fields.items():
@@ -85,7 +85,6 @@ def resolve_generics(annotation, type_map):
         )
         return result
     
-    # Handle TypeAnnotationNode
     if isinstance(annotation, TypeAnnotationNode):
         resolved_parts = []
         
@@ -112,7 +111,6 @@ def resolve_generics(annotation, type_map):
                 else:
                     resolved_parts.append(part)
         
-        # Create new TypeAnnotationNode with resolved parts
         result = TypeAnnotationNode(
             resolved_parts,
             annotation.pos_start,
@@ -281,7 +279,6 @@ def _resolve_generic_annotation(annotation, context):
     if not isinstance(annotation, TypeAnnotationNode):
         return annotation
     
-    # Check each part to see if it's a generic type usage
     for part in annotation.type_parts:
         if '<' in part and '>' in part:
             base_type, type_args = _extract_generic_args_from_type_str(part)
@@ -457,7 +454,6 @@ def _types_match(type_ann1, type_ann2):
     if type_ann1 is None or type_ann2 is None:
         return type_ann1 is type_ann2
     
-    # Convert to string for comparison
     str1 = str(type_ann1)
     str2 = str(type_ann2)
     
@@ -537,7 +533,6 @@ def check_structural_conformance(value, trait_def, context, pos_start, pos_end):
 
 
 def _get_value_type_name(value):
-    """Get the type name of a value (e.g., 'User', 'Product', 'int')"""
     from src.values.types.number import Int, Float
     from src.values.types.string import String
     from src.values.types.list import List
@@ -562,10 +557,8 @@ def _get_value_type_name(value):
     elif isinstance(value, List):
         return "array"
     elif isinstance(value, Dict):
-        # Try to get the dict's type name from its metadata
         if hasattr(value, 'type_name') and value.type_name:
             return value.type_name
-        # Otherwise it's just a generic dict
         return "dict"
     elif isinstance(value, BaseFunction):
         return "call"

@@ -9,7 +9,7 @@ class FuncDefNode:
 		self.return_type = return_type
 		self.arg_types = arg_types or []
 		self.arg_defaults = arg_defaults or [None] * len(arg_name_toks)
-		self.type_params = type_params or []  # Generic type parameters like ["T"] or ["T", "E"]
+		self.type_params = type_params or []
 
 		if self.var_name_tok:
 			self.pos_start = self.var_name_tok.pos_start

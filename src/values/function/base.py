@@ -8,6 +8,7 @@ class BaseFunction(Value):
   def __init__(self, name):
     super().__init__()
     self.name = name or "<anonymous>"
+    self.is_async = False
 
   def generate_new_context(self):
     new_context = Context(self.name, self.context, self.pos_start)

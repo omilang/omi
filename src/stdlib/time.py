@@ -15,6 +15,7 @@ DEFAULT_TIME_FORMAT = "%Y-%m-%d %H:%M:%S"
 class TimeBuiltInFunction(StdlibFunction):
     def __init__(self, name):
         super().__init__(name)
+        self.is_async = True
 
     def copy(self):
         copy = TimeBuiltInFunction(self.name)

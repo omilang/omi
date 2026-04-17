@@ -10,6 +10,7 @@ from src.values.types.dict import Dict
 from src.values.types.boolean import Boolean
 from src.values.types.module import Module
 from src.nodes.block import BlockNode
+from src.values.async_group import AsyncGroupValue
 from src.run.runtime import RTResult
 from src.run.context import Context
 from src.run.source import read_source_file
@@ -467,7 +468,7 @@ class Interpreter:
         func_value = Function.Function(
             func_name, body_node, arg_names, node.should_auto_return,
             return_type=node.return_type, arg_types=node.arg_types,
-            arg_defaults=arg_defaults, is_async=node.is_async
+            arg_defaults=arg_defaults, type_params=getattr(node, 'type_params', []), is_async=node.is_async
         ).set_context(context).set_pos(node.pos_start, node.pos_end)
         
         if node.var_name_tok:
@@ -503,10 +504,56 @@ class Interpreter:
             if res.should_return(): return res
 
         import src.values.function.function as FuncModule
-        if isinstance(value_to_call, FuncModule.Function):
-            should_schedule = node.is_async or value_to_call.is_async
-            if should_schedule:
-                future = FutureValue(result_type_annotation=value_to_call.return_type)
+        from src.values.function.stdlib import StdlibFunction as StdlibFunctionType
+        is_user_function = isinstance(value_to_call, FuncModule.Function)
+        is_stdlib_function = isinstance(value_to_call, StdlibFunctionType)
+        is_async_callable = getattr(value_to_call, "is_async", False)
+
+        def _execute_sync_call():
+            if is_user_function:
+                return res.register(value_to_call.execute(args, kwargs))
+            if is_stdlib_function:
+                return res.register(value_to_call.execute(args, kwargs))
+            return res.register(value_to_call.execute(args))
+
+        if node.is_async and runtime_flags.noasync:
+            print(f"Warning: async execution is disabled by '@use noasync'. Calling '{getattr(value_to_call, 'name', 'value')}' synchronously.")
+            return_value = _execute_sync_call()
+            if res.should_return(): return res
+            return_value = return_value.copy().set_pos(node.pos_start, node.pos_end).set_context(context)
+            return res.success(return_value)
+
+        if node.is_async and not is_async_callable:
+            return res.failure(RTError(
+                node.pos_start, node.pos_end,
+                f"Function '{getattr(value_to_call, 'name', 'value')}' is synchronous and cannot be called with async",
+                context
+            ))
+
+        if not node.is_async and is_async_callable:
+            if is_user_function and runtime_flags.noasync:
+                print(f"Warning: async function '{getattr(value_to_call, 'name', 'value')}' is executed synchronously because '@use noasync' is enabled.")
+                return_value = _execute_sync_call()
+                if res.should_return(): return res
+                return_value = return_value.copy().set_pos(node.pos_start, node.pos_end).set_context(context)
+                return res.success(return_value)
+
+            if is_user_function:
+                return res.failure(RTError(
+                    node.pos_start, node.pos_end,
+                    f"Async function '{getattr(value_to_call, 'name', 'value')}' must be called with async",
+                    context
+                ))
+
+            return_value = _execute_sync_call()
+            if res.should_return(): return res
+            return_value = return_value.copy().set_pos(node.pos_start, node.pos_end).set_context(context)
+            return res.success(return_value)
+
+        if node.is_async:
+            if is_user_function:
+                resolved_return_type = value_to_call.resolve_return_type(args, kwargs) if hasattr(value_to_call, 'resolve_return_type') else value_to_call.return_type
+                future = FutureValue(result_type_annotation=resolved_return_type)
                 future.set_context(context).set_pos(node.pos_start, node.pos_end)
 
                 def _invoke_function():
@@ -516,19 +563,17 @@ class Interpreter:
                     return call_result.value
 
                 future.schedule_deferred(_invoke_function)
-                register_future(context, future)
-                return res.success(future)
-
-            return_value = res.register(value_to_call.execute(args, kwargs))
-        else:
-            if node.is_async:
+            else:
                 loop = ensure_event_loop(context)
                 future = FutureValue()
                 future.set_context(context).set_pos(node.pos_start, node.pos_end)
 
                 async def _invoke_value():
                     def _sync_call():
-                        call_result = value_to_call.execute(args)
+                        if is_stdlib_function:
+                            call_result = value_to_call.execute(args, kwargs)
+                        else:
+                            call_result = value_to_call.execute(args)
                         if call_result.error:
                             raise OmiAsyncTaskError(call_result.error)
                         return call_result.value
@@ -536,9 +581,13 @@ class Interpreter:
                     return await asyncio.to_thread(_sync_call)
 
                 future.schedule(loop, _invoke_value())
-                register_future(context, future)
-                return res.success(future)
 
+            register_future(context, future)
+            return res.success(future)
+
+        if is_user_function or is_stdlib_function:
+            return_value = res.register(value_to_call.execute(args, kwargs))
+        else:
             return_value = res.register(value_to_call.execute(args))
         if res.should_return(): return res
         return_value = return_value.copy().set_pos(node.pos_start, node.pos_end).set_context(context)
@@ -546,6 +595,13 @@ class Interpreter:
 
     def visit_AwaitNode(self, node, context):
         res = RTResult()
+
+        if runtime_flags.noasync:
+            return res.failure(RTError(
+                node.pos_start, node.pos_end,
+                "'async <expr>' is disabled because '@use noasync' is enabled",
+                context
+            ))
 
         if not getattr(context, "in_async_function", False):
             return res.failure(RTError(
@@ -569,6 +625,76 @@ class Interpreter:
         if err:
             return res.failure(err)
         return res.success(value)
+
+    def visit_AsyncGroupNode(self, node, context):
+        res = RTResult()
+
+        if runtime_flags.noasync:
+            print(f"Warning: async group '{node.name}' is disabled by '@use noasync'. Group body runs synchronously without async scheduling.")
+            disabled_group = AsyncGroupValue()
+            disabled_group.cancel()
+            disabled_group.set_context(context).set_pos(node.pos_start, node.pos_end)
+            context.symbol_table.set(node.name, disabled_group)
+
+            body_result = self.visit(node.body_node, context)
+            if body_result.error:
+                return body_result
+            return res.success(disabled_group)
+
+        timeout = None
+        for param_name in node.params:
+            if param_name != "timeout":
+                return res.failure(RTError(
+                    node.pos_start, node.pos_end,
+                    f"Unknown async group parameter '{param_name}'",
+                    context
+                ))
+
+        if "timeout" in node.params:
+            timeout_value = res.register(self.visit(node.params["timeout"], context))
+            if res.should_return(): return res
+            if not isinstance(timeout_value, Number):
+                return res.failure(RTError(
+                    node.pos_start, node.pos_end,
+                    "Async group timeout must be a number",
+                    context
+                ))
+            timeout = timeout_value.value
+
+        group = AsyncGroupValue(timeout)
+        group.set_context(context).set_pos(node.pos_start, node.pos_end)
+        context.symbol_table.set(node.name, group)
+
+        group_context = Context("async group", context, node.pos_start)
+        group_context.symbol_table = context.symbol_table
+        group_context.in_async_function = True
+
+        context.async_group_stack.append(group)
+
+        if timeout is not None:
+            loop = ensure_event_loop(context)
+            timeout_future = FutureValue()
+            timeout_future.set_context(context).set_pos(node.pos_start, node.pos_end)
+
+            async def _timeout_group():
+                await asyncio.sleep(timeout)
+                group.cancel()
+                return Number.null
+
+            timeout_future.schedule(loop, _timeout_group())
+            group.set_timeout_future(timeout_future)
+            register_future(context, timeout_future)
+
+        try:
+            body_result = self.visit(node.body_node, group_context)
+            if body_result.error:
+                group.cancel()
+                return body_result
+        finally:
+            if context.async_group_stack and context.async_group_stack[-1] is group:
+                context.async_group_stack.pop()
+
+        return res.success(group)
     
     def visit_ImportNode(self, node, context):
         res = RTResult()
@@ -579,6 +705,15 @@ class Interpreter:
             module_value = BUILTIN_MODULES[module_path]()
             module_value.set_context(context).set_pos(node.pos_start, node.pos_end)
             context.symbol_table.set(alias, module_value)
+
+            for key, val in module_value.symbol_table.symbols.items():
+                if key.startswith("__type_") and key.endswith("__"):
+                    type_name = key[7:-2]
+                    context.symbol_table.set(f"__type_{alias}.{type_name}__", val)
+                if key.startswith("__trait_") and key.endswith("__"):
+                    trait_name = key[8:-2]
+                    context.symbol_table.set(f"__trait_{alias}.{trait_name}__", val)
+
             return res.success(Number.null)
 
         if module_path.startswith("omi:"):
@@ -814,25 +949,76 @@ class Interpreter:
         try_context = Context("try", parent=context, parent_entry_pos=node.pos_start)
         try_context.symbol_table = SymbolTable(context.symbol_table)
 
+        result_value = Number.null
+
         try_value = res.register(self.visit(node.try_body, try_context))
+        pending_signal = None
+        pending_exception = None
+        pending_error = None
+        pending_return_value = None
+        pending_continue = False
+        pending_break = False
+
         if res.signal == "exception" and res.exception_data is not None:
             catch_context = Context("catch", parent=context, parent_entry_pos=node.pos_start)
             catch_context.symbol_table = SymbolTable(context.symbol_table)
             catch_value = self._runtime_error_value(res.exception_data, catch_context, node.pos_start, node.pos_end)
             catch_context.symbol_table.set(node.catch_var_tok.value, catch_value)
 
-            if isinstance(node.catch_body, BlockNode):
-                return self._execute_block_last(node.catch_body, catch_context)
+            catch_res = self._execute_block_last(node.catch_body, catch_context) if isinstance(node.catch_body, BlockNode) else self.visit(node.catch_body, catch_context)
 
-            catch_result = res.register(self.visit(node.catch_body, catch_context))
-            if res.should_return():
-                return res
-            return res.success(catch_result)
+            if catch_res.signal == "exception" and catch_res.exception_data is not None:
+                pending_signal = "exception"
+                pending_exception = catch_res.exception_data
+            elif catch_res.error:
+                pending_error = catch_res.error
+            elif catch_res.func_return_value is not None:
+                pending_return_value = catch_res.func_return_value
+            elif catch_res.loop_should_continue:
+                pending_continue = True
+            elif catch_res.loop_should_break:
+                pending_break = True
+            else:
+                result_value = catch_res.value if catch_res.value is not None else Number.null
+        elif res.error:
+            pending_error = res.error
+        elif res.func_return_value is not None:
+            pending_return_value = res.func_return_value
+        elif res.loop_should_continue:
+            pending_continue = True
+        elif res.loop_should_break:
+            pending_break = True
+        else:
+            result_value = try_value if try_value is not None else Number.null
 
-        if res.should_return():
-            return res
+        if node.final_body is not None:
+            final_context = Context("final", parent=context, parent_entry_pos=node.pos_start)
+            final_context.symbol_table = SymbolTable(context.symbol_table)
+            final_res = self._execute_block_last(node.final_body, final_context) if isinstance(node.final_body, BlockNode) else self.visit(node.final_body, final_context)
 
-        return res.success(try_value)
+            if final_res.signal == "exception" and final_res.exception_data is not None:
+                return RTResult().register_exception(final_res.exception_data)
+            if final_res.error:
+                return RTResult().failure(final_res.error)
+            if final_res.func_return_value is not None:
+                return RTResult().success_return(final_res.func_return_value)
+            if final_res.loop_should_continue:
+                return RTResult().success_continue()
+            if final_res.loop_should_break:
+                return RTResult().success_break()
+
+        if pending_signal == "exception" and pending_exception is not None:
+            return RTResult().register_exception(pending_exception)
+        if pending_error:
+            return RTResult().failure(pending_error)
+        if pending_return_value is not None:
+            return RTResult().success_return(pending_return_value)
+        if pending_continue:
+            return RTResult().success_continue()
+        if pending_break:
+            return RTResult().success_break()
+
+        return RTResult().success(result_value)
 
     def visit_MatchNode(self, node, context):
         res = RTResult()
@@ -980,6 +1166,8 @@ class Interpreter:
             runtime_flags.eval_enabled = True
         elif directive == 'notypes':
             runtime_flags.notypes = True
+        elif directive == 'noasync':
+            runtime_flags.noasync = True
         return RTResult().success(Number.null)
 
     def visit_TypeAliasNode(self, node, context):
