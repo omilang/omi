@@ -9,6 +9,7 @@ from src.values.types.string import String
 from src.values.types.dict import Dict
 from src.values.types.module import Module
 from src.values.function.stdlib import StdlibFunction
+from src.nodes.types.typeannotation import TypeAnnotationNode
 from src.values.convert import python_to_omi, omi_to_python
 from src.run.runtime import RTResult
 from src.main.symboltable import SymbolTable
@@ -17,6 +18,7 @@ from src.error.message.rt import RTError
 class _ResponseJsonFunction(StdlibFunction):
     def __init__(self, raw_text):
         super().__init__("json")
+        self.is_async = True
         self._raw = raw_text
 
     def execute(self, args):
@@ -127,9 +129,14 @@ def _make_request(method, url, body=None, headers_val=None, timeout=30):
 def _null():
     return Number(0)
 
+
+def _req_type_annotation():
+    return TypeAnnotationNode(["httpresponse"], None, None)
+
 class HTTPBuiltInFunction(StdlibFunction):
     def __init__(self, name):
         super().__init__(name)
+        self.is_async = True
 
     def copy(self):
         copy = HTTPBuiltInFunction(self.name)
@@ -298,6 +305,7 @@ class HTTPBuiltInFunction(StdlibFunction):
 
 def create_http_module():
     symbol_table = SymbolTable()
+    symbol_table.set("__type_req__", _req_type_annotation())
     for name in ("get", "post", "put", "patch", "delete", "request", "download", "upload"):
         symbol_table.set(name, HTTPBuiltInFunction(name))
     return Module("http", symbol_table)

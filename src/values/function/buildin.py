@@ -84,6 +84,8 @@ class BuiltInFunction(BaseFunction):
       return
     text = sep.join(str(value) for value in values)
     print(text, end=end)
+    flags.repl_output_emitted = True
+    flags.repl_output_ended_with_newline = str(end).endswith("\n")
 
   def execute_print(self, exec_ctx):
     value = exec_ctx.symbol_table.get("value")
@@ -306,7 +308,7 @@ class BuiltInFunction(BaseFunction):
 
     code = code.value
 
-    result, error, _ = run.run("<eval>", code)
+    result, error, _ = run.run("<eval>", code, preserve_flags=True)
     
     if error:
       return RTResult().failure(RTError(
@@ -318,6 +320,27 @@ class BuiltInFunction(BaseFunction):
 
     return RTResult().success(result.elements[0] if len(result.elements) == 1 else result)
   execute_eval.arg_names = ["code"]
+
+  def execute_cancel(self, exec_ctx):
+    target = exec_ctx.symbol_table.get("target")
+
+    from src.values.future import FutureValue
+    from src.values.async_group import AsyncGroupValue
+
+    if isinstance(target, FutureValue):
+      target.cancel()
+      return RTResult().success(Number.null)
+
+    if isinstance(target, AsyncGroupValue):
+      target.cancel()
+      return RTResult().success(Number.null)
+
+    return RTResult().failure(RTError(
+      self.pos_start, self.pos_end,
+      "cancel() expects a future or async group",
+      exec_ctx
+    ))
+  execute_cancel.arg_names = ["target"]
 
   def execute_range(self, exec_ctx):
     from src.values.types.number import Int, Float

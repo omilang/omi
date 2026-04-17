@@ -16,6 +16,7 @@ from src.error.message.rt import RTError
 class SystemBuiltInFunction(StdlibFunction):
     def __init__(self, name):
         super().__init__(name)
+        self.is_async = True
 
     def copy(self):
         copy = SystemBuiltInFunction(self.name)
@@ -101,7 +102,6 @@ def create_system_module():
     for name in funcs:
         symbol_table.set(name, SystemBuiltInFunction(name))
 
-    # Add platform and username as constants
     symbol_table.set("platform", String(platform.system()))
     
     try:

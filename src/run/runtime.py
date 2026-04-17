@@ -5,12 +5,24 @@ class RTResult:
     def reset(self):
         self.value = None
         self.error = None
+        self.signal = None
+        self.exception_data = None
         self.func_return_value = None
         self.loop_should_continue = False
         self.loop_should_break = False
 
     def register(self, res):
         self.error = res.error
+        from src.error.message.rt import RTError
+        if res.signal == "exception":
+            self.signal = "exception"
+            self.exception_data = res.exception_data
+        elif isinstance(res.error, RTError):
+            self.signal = "exception"
+            self.exception_data = res.error
+        else:
+            self.signal = res.signal
+            self.exception_data = res.exception_data
         self.func_return_value = res.func_return_value
         self.loop_should_continue = res.loop_should_continue
         self.loop_should_break = res.loop_should_break
@@ -24,6 +36,12 @@ class RTResult:
     def success_return(self, value):
         self.reset()
         self.func_return_value = value
+        return self
+
+    def register_exception(self, error):
+        self.reset()
+        self.signal = "exception"
+        self.exception_data = error
         return self
     
     def success_continue(self):
@@ -44,6 +62,7 @@ class RTResult:
     def should_return(self):
         return (
         self.error or
+            self.signal == "exception" or
             self.func_return_value or
             self.loop_should_continue or
             self.loop_should_break

@@ -30,9 +30,11 @@ from src.nodes.loops.forN import ForNode
 from src.nodes.loops.whileN import WhileNode
 from src.nodes.function.funcdef import FuncDefNode
 from src.nodes.function.call import CallNode
+from src.nodes.function.awaitN import AwaitNode
 from src.nodes.types.string import StringNode
 from src.nodes.types.fstring import FStringNode
 from src.nodes.types.list import ListNode
+from src.nodes.block import BlockNode
 from src.nodes.types.dict import DictNode
 from src.nodes.jump.breakN import BreakNode
 from src.nodes.jump.returnN import ReturnNode
@@ -48,6 +50,8 @@ from src.nodes.types.typeannotation import TypeAnnotationNode, DictTypeAnnotatio
 from src.nodes.types.subscript import DictSubscriptNode
 from src.nodes.types.enumdef import EnumDefNode, EnumVariantSignature
 from src.nodes.types.traitdef import TraitDefNode, TraitMethodSignature
+from src.nodes.control.flow import TryNode, MatchNode, CaseNode, PatternNode
+from src.nodes.control.asyncgroup import AsyncGroupNode
 from src.error.message.invalidsyntax import InvalidSyntaxError
 from src.main.parser.result import ParseResult
 
@@ -67,6 +71,7 @@ class Parser:
     def __init__(self, tokens):
         self.tokens = tokens
         self.tok_idx = -1
+        self.function_async_depth = 0
         self.advance()
 
     def advance(self):
@@ -280,10 +285,20 @@ class Parser:
             return val
         return None
 
+    def _is_type_parameter_string(self, s):
+        if not s:
+            return False
+        if '<' in s or '|' in s or s.startswith('"'):
+            return False
+        concrete_types = {'int', 'float', 'number', 'string', 'bool', 'array', 'dict', 'call', 'void', 'null', 'every'}
+        if s.lower() in concrete_types:
+            return False
+        return s and (s[0].isupper() or (len(s) <= 3 and s.isalpha()))
+
     def _extract_type_params_from_annotation(self, ann):
         if ann is None or not ann.type_parts:
             return []
-        
+
         type_str = ann.type_parts[0]
 
         if '<' in type_str and '>' in type_str:
@@ -293,8 +308,62 @@ class Parser:
             params = [p.strip() for p in params_str.split(',')]
             params = [p for p in params if p]
             return params
-        
+
         return []
+
+    def _parse_explicit_type_params(self):
+        if self.current_tok.type != TT_LT:
+            return []
+        
+        saved_idx = self.tok_idx
+        
+        try:
+            self.advance()
+            
+            type_params = []
+            
+            if self.current_tok.type != TT_IDENTIFIER:
+                self.tok_idx = saved_idx
+                self.update_current_tok()
+                return []
+            
+            first_param = self.current_tok.value
+            if not self._is_type_parameter_string(first_param):
+                self.tok_idx = saved_idx
+                self.update_current_tok()
+                return []
+            
+            type_params.append(first_param)
+            self.advance()
+            
+            while self.current_tok.type == TT_COMMA:
+                self.advance()
+                
+                if self.current_tok.type != TT_IDENTIFIER:
+                    self.tok_idx = saved_idx
+                    self.update_current_tok()
+                    return []
+                
+                param = self.current_tok.value
+                if not self._is_type_parameter_string(param):
+                    self.tok_idx = saved_idx
+                    self.update_current_tok()
+                    return []
+                
+                type_params.append(param)
+                self.advance()
+            
+            if self.current_tok.type != TT_GT:
+                self.tok_idx = saved_idx
+                self.update_current_tok()
+                return []
+            
+            self.advance()
+            return type_params
+        except:
+            self.tok_idx = saved_idx
+            self.update_current_tok()
+            return []
 
     def _parse_dict_type_def(self):
         res = ParseResult()
@@ -647,6 +716,248 @@ class Parser:
         if res.error: return res
         cases, else_case = all_cases
         return res.success(IfNode(cases, else_case))
+
+    def try_expr(self):
+        res = ParseResult()
+        pos_start = self.current_tok.pos_start.copy()
+
+        if not self.current_tok.matches(TT_KEYWORD, "try"):
+            return res.failure(InvalidSyntaxError(
+                self.current_tok.pos_start, self.current_tok.pos_end,
+                "Expected 'try'"
+            ))
+
+        def parse_clause_body():
+            if self.current_tok.type == TT_NEWLINE:
+                res.register_advancement()
+                self.advance()
+                body = res.register(self.statements())
+                if res.error:
+                    return None
+            else:
+                body = res.register(self.statement())
+                if res.error:
+                    return None
+
+            while self.current_tok.type == TT_NEWLINE:
+                res.register_advancement()
+                self.advance()
+
+            return body
+
+        res.register_advancement()
+        self.advance()
+
+        if self.current_tok.type != TT_COLON:
+            return res.failure(InvalidSyntaxError(
+                self.current_tok.pos_start, self.current_tok.pos_end,
+                "Expected ':' after 'try'"
+            ))
+
+        res.register_advancement()
+        self.advance()
+
+        try_body = parse_clause_body()
+        if res.error:
+            return res
+
+        if not self.current_tok.matches(TT_KEYWORD, "catch"):
+            return res.failure(InvalidSyntaxError(
+                self.current_tok.pos_start, self.current_tok.pos_end,
+                "Expected 'catch' after try block"
+            ))
+
+        res.register_advancement()
+        self.advance()
+
+        if self.current_tok.type != TT_IDENTIFIER:
+            return res.failure(InvalidSyntaxError(
+                self.current_tok.pos_start, self.current_tok.pos_end,
+                "Expected identifier after 'catch'"
+            ))
+
+        catch_var_tok = self.current_tok
+        res.register_advancement()
+        self.advance()
+
+        if self.current_tok.type != TT_COLON:
+            return res.failure(InvalidSyntaxError(
+                self.current_tok.pos_start, self.current_tok.pos_end,
+                "Expected ':' after catch variable"
+            ))
+
+        res.register_advancement()
+        self.advance()
+
+        catch_body = parse_clause_body()
+        if res.error:
+            return res
+
+        final_body = None
+        if self.current_tok.matches(TT_KEYWORD, "final"):
+            res.register_advancement()
+            self.advance()
+
+            if self.current_tok.type != TT_COLON:
+                return res.failure(InvalidSyntaxError(
+                    self.current_tok.pos_start, self.current_tok.pos_end,
+                    "Expected ':' after 'final'"
+                ))
+
+            res.register_advancement()
+            self.advance()
+
+            final_body = parse_clause_body()
+            if res.error:
+                return res
+
+        if not self.current_tok.matches(TT_KEYWORD, "end"):
+            return res.failure(InvalidSyntaxError(
+                self.current_tok.pos_start, self.current_tok.pos_end,
+                "Expected 'end' after try/catch/final block"
+            ))
+
+        end_pos = self.current_tok.pos_end.copy()
+        res.register_advancement()
+        self.advance()
+
+        return res.success(TryNode(try_body, catch_var_tok, catch_body, final_body, pos_start, end_pos))
+
+    def _parse_match_pattern(self):
+        res = ParseResult()
+        tok = self.current_tok
+        pos_start = tok.pos_start.copy()
+
+        if tok.type == TT_IDENTIFIER:
+            if tok.value == "_":
+                res.register_advancement()
+                self.advance()
+                return res.success(PatternNode("wildcard", name="_", pos_start=pos_start, pos_end=tok.pos_end.copy()))
+
+            name = tok.value
+            res.register_advancement()
+            self.advance()
+
+            if self.current_tok.type == TT_LPAREN:
+                res.register_advancement()
+                self.advance()
+
+                if self.current_tok.type != TT_IDENTIFIER:
+                    return res.failure(InvalidSyntaxError(
+                        self.current_tok.pos_start, self.current_tok.pos_end,
+                        "Expected capture variable name inside pattern"
+                    ))
+
+                capture_var_tok = self.current_tok
+                res.register_advancement()
+                self.advance()
+
+                if self.current_tok.type != TT_RPAREN:
+                    return res.failure(InvalidSyntaxError(
+                        self.current_tok.pos_start, self.current_tok.pos_end,
+                        "Expected ')' to close pattern"
+                    ))
+
+                pos_end = self.current_tok.pos_end.copy()
+                res.register_advancement()
+                self.advance()
+                return res.success(PatternNode("variant", name=name, capture_var_tok=capture_var_tok, pos_start=pos_start, pos_end=pos_end))
+
+            return res.success(PatternNode("identifier", name=name, pos_start=pos_start, pos_end=tok.pos_end.copy()))
+
+        if tok.type in (TT_STRING, TT_INT, TT_FLOAT):
+            res.register_advancement()
+            self.advance()
+            return res.success(PatternNode("literal", value=tok.value, pos_start=pos_start, pos_end=tok.pos_end.copy()))
+
+        return res.failure(InvalidSyntaxError(
+            tok.pos_start, tok.pos_end,
+            "Expected pattern name, literal, or '_'"
+        ))
+
+    def match_expr(self):
+        res = ParseResult()
+        pos_start = self.current_tok.pos_start.copy()
+
+        if not self.current_tok.matches(TT_KEYWORD, "match"):
+            return res.failure(InvalidSyntaxError(
+                self.current_tok.pos_start, self.current_tok.pos_end,
+                "Expected 'match'"
+            ))
+
+        res.register_advancement()
+        self.advance()
+
+        expr = res.register(self.expr())
+        if res.error: return res
+
+        if self.current_tok.type != TT_COLON:
+            return res.failure(InvalidSyntaxError(
+                self.current_tok.pos_start, self.current_tok.pos_end,
+                "Expected ':' after match expression"
+            ))
+
+        res.register_advancement()
+        self.advance()
+
+        cases = []
+        while self.current_tok.type == TT_NEWLINE:
+            res.register_advancement()
+            self.advance()
+
+        while self.current_tok.matches(TT_KEYWORD, "case"):
+            case_start = self.current_tok.pos_start.copy()
+            res.register_advancement()
+            self.advance()
+
+            pattern = res.register(self._parse_match_pattern())
+            if res.error: return res
+
+            if self.current_tok.type != TT_COLON:
+                return res.failure(InvalidSyntaxError(
+                    self.current_tok.pos_start, self.current_tok.pos_end,
+                    "Expected ':' after case pattern"
+                ))
+
+            res.register_advancement()
+            self.advance()
+
+            if self.current_tok.type == TT_NEWLINE:
+                res.register_advancement()
+                self.advance()
+                body = res.register(self.statements())
+                if res.error: return res
+            else:
+                body = res.register(self.statement())
+                if res.error: return res
+
+            cases.append(CaseNode(pattern, body, case_start, self.current_tok.pos_end.copy()))
+
+            while self.current_tok.type == TT_NEWLINE:
+                res.register_advancement()
+                self.advance()
+
+            if self.current_tok.matches(TT_KEYWORD, "end"):
+                res.register_advancement()
+                self.advance()
+                return res.success(MatchNode(expr, cases, pos_start, self.current_tok.pos_end.copy()))
+
+        if len(cases) == 0:
+            return res.failure(InvalidSyntaxError(
+                self.current_tok.pos_start, self.current_tok.pos_end,
+                "Expected at least one 'case' in match expression"
+            ))
+
+        if not self.current_tok.matches(TT_KEYWORD, "end"):
+            return res.failure(InvalidSyntaxError(
+                self.current_tok.pos_start, self.current_tok.pos_end,
+                "Expected 'case' or 'end' in match expression"
+            ))
+
+        res.register_advancement()
+        self.advance()
+
+        return res.success(MatchNode(expr, cases, pos_start, self.current_tok.pos_end.copy()))
     
     def if_expr_b(self):
         return self.if_expr_cases("elif")
@@ -968,9 +1279,22 @@ class Parser:
             if res.error: return res
             return res.success(func_def)
 
+        elif tok.matches(TT_KEYWORD, "async"):
+            pos_start = tok.pos_start.copy()
+            res.register_advancement()
+            self.advance()
+            if not self.current_tok.matches(TT_KEYWORD, "func"):
+                return res.failure(InvalidSyntaxError(
+                    self.current_tok.pos_start, self.current_tok.pos_end,
+                    "Expected 'func' after 'async'"
+                ))
+            func_def = res.register(self.func_def(is_async=True, pos_start_override=pos_start))
+            if res.error: return res
+            return res.success(func_def)
+
         return res.failure(InvalidSyntaxError(
             tok.pos_start, tok.pos_end,
-            f"Unexpected {self.describe_token(tok)}. Expected a value, identifier, '(', '[', '{{', 'if', 'for', 'while' or 'func'."
+            f"Unexpected {self.describe_token(tok)}. Expected a value, identifier, '(', '[', '{{', 'if', 'for', 'while', 'func' or 'async func'."
         ))
 
     def parse_fstring(self, tok):
@@ -1033,8 +1357,183 @@ class Parser:
             return self.tokens[next_idx].type == TT_EQ
         return False
 
+    def _parse_with_async_scope(self, parser_fn, is_async):
+        if is_async:
+            self.function_async_depth += 1
+        try:
+            return parser_fn()
+        finally:
+            if is_async:
+                self.function_async_depth -= 1
+
+    def _is_named_async_group(self):
+        name_idx = self.tok_idx + 1
+        if name_idx >= len(self.tokens):
+            return False
+        if self.tokens[name_idx].type != TT_IDENTIFIER:
+            return False
+
+        after_name_idx = name_idx + 1
+        if after_name_idx >= len(self.tokens):
+            return False
+
+        after_name = self.tokens[after_name_idx]
+        if after_name.type == TT_COLON:
+            return True
+
+        if after_name.type != TT_LPAREN:
+            return False
+
+        depth = 0
+        idx = after_name_idx
+        while idx < len(self.tokens):
+            tok = self.tokens[idx]
+            if tok.type == TT_LPAREN:
+                depth += 1
+            elif tok.type == TT_RPAREN:
+                depth -= 1
+                if depth == 0:
+                    idx += 1
+                    break
+            idx += 1
+
+        if idx >= len(self.tokens):
+            return False
+        return self.tokens[idx].type == TT_COLON
+
+    def async_group(self, pos_start_override=None):
+        res = ParseResult()
+        pos_start = pos_start_override or self.current_tok.pos_start.copy()
+
+        if self.current_tok.type != TT_IDENTIFIER:
+            return res.failure(InvalidSyntaxError(
+                self.current_tok.pos_start, self.current_tok.pos_end,
+                "Expected group name after 'async'"
+            ))
+
+        group_name = self.current_tok.value
+
+        res.register_advancement()
+        self.advance()
+
+        params = {}
+        if self.current_tok.type == TT_LPAREN:
+            res.register_advancement()
+            self.advance()
+
+            if self.current_tok.type != TT_RPAREN:
+                while True:
+                    if self.current_tok.type not in (TT_IDENTIFIER, TT_KEYWORD):
+                        return res.failure(InvalidSyntaxError(
+                            self.current_tok.pos_start, self.current_tok.pos_end,
+                            "Expected parameter name in 'async group'"
+                        ))
+
+                    param_name = self.current_tok.value
+                    res.register_advancement()
+                    self.advance()
+
+                    if self.current_tok.type != TT_COLON:
+                        return res.failure(InvalidSyntaxError(
+                            self.current_tok.pos_start, self.current_tok.pos_end,
+                            "Expected ':' after parameter name in 'async group'"
+                        ))
+
+                    res.register_advancement()
+                    self.advance()
+
+                    param_value = res.register(self.expr())
+                    if res.error: return res
+                    params[param_name] = param_value
+
+                    if self.current_tok.type == TT_COMMA:
+                        res.register_advancement()
+                        self.advance()
+                        continue
+                    break
+
+            if self.current_tok.type != TT_RPAREN:
+                return res.failure(InvalidSyntaxError(
+                    self.current_tok.pos_start, self.current_tok.pos_end,
+                    "Expected ')' after 'async group' parameters"
+                ))
+
+            res.register_advancement()
+            self.advance()
+
+        if self.current_tok.type != TT_COLON:
+            return res.failure(InvalidSyntaxError(
+                self.current_tok.pos_start, self.current_tok.pos_end,
+                "Expected ':' after 'async group'"
+            ))
+
+        res.register_advancement()
+        self.advance()
+
+        if self.current_tok.type != TT_NEWLINE:
+            return res.failure(InvalidSyntaxError(
+                self.current_tok.pos_start, self.current_tok.pos_end,
+                "Expected newline after ':' in 'async group'"
+            ))
+
+        res.register_advancement()
+        self.advance()
+
+        body = res.register(self._parse_with_async_scope(self.statements, True))
+        if res.error: return res
+
+        if not self.current_tok.matches(TT_KEYWORD, "end"):
+            return res.failure(InvalidSyntaxError(
+                self.current_tok.pos_start, self.current_tok.pos_end,
+                "Expected 'end' to close 'async group'"
+            ))
+
+        res.register_advancement()
+        self.advance()
+
+        return res.success(AsyncGroupNode(group_name, params, body, pos_start, body.pos_end))
+
     def call(self):
         res = ParseResult()
+
+        if self.current_tok.matches(TT_KEYWORD, "async"):
+            next_is_func = (
+                self.tok_idx + 1 < len(self.tokens)
+                and self.tokens[self.tok_idx + 1].matches(TT_KEYWORD, "func")
+            )
+            if next_is_func:
+                atom = res.register(self.atom())
+                if res.error: return res
+                return res.success(atom)
+
+            if self._is_named_async_group():
+                async_tok = self.current_tok
+                res.register_advancement()
+                self.advance()
+                group_node = res.register(self.async_group(async_tok.pos_start.copy()))
+                if res.error: return res
+                return res.success(group_node)
+
+            async_tok = self.current_tok
+            res.register_advancement()
+            self.advance()
+
+            async_target = res.register(self.call())
+            if res.error: return res
+
+            if isinstance(async_target, CallNode):
+                async_target.is_async = True
+                async_target.pos_start = async_tok.pos_start
+                return res.success(async_target)
+
+            if self.function_async_depth <= 0:
+                return res.failure(InvalidSyntaxError(
+                    async_tok.pos_start, async_tok.pos_end,
+                    "'async <expr>' is only allowed inside 'async func' when used for awaiting"
+                ))
+
+            return res.success(AwaitNode(async_target, async_tok.pos_start.copy(), async_target.pos_end))
+
         atom = res.register(self.atom())
         if res.error: return res
 
@@ -1043,7 +1542,7 @@ class Parser:
                 res.register_advancement()
                 self.advance()
 
-                if self.current_tok.type != TT_IDENTIFIER:
+                if self.current_tok.type not in (TT_IDENTIFIER, TT_KEYWORD):
                     return res.failure(InvalidSyntaxError(
                         self.current_tok.pos_start, self.current_tok.pos_end,
                         "Expected identifier after '.'"
@@ -1198,7 +1697,7 @@ class Parser:
                 continue
             statements.append(statement)
 
-        return res.success(ListNode(
+        return res.success(BlockNode(
             statements,
             pos_start,
             self.current_tok.pos_end.copy()
@@ -1431,6 +1930,16 @@ class Parser:
             trait_node = res.register(self.trait_def())
             if res.error: return res
             return res.success(trait_node)
+
+        if self.current_tok.matches(TT_KEYWORD, 'try'):
+            try_node = res.register(self.try_expr())
+            if res.error: return res
+            return res.success(try_node)
+
+        if self.current_tok.matches(TT_KEYWORD, 'match'):
+            match_node = res.register(self.match_expr())
+            if res.error: return res
+            return res.success(match_node)
         
         if self.current_tok.matches(TT_KEYWORD, 'continue'):
             res.register_advancement()
@@ -1584,8 +2093,9 @@ class Parser:
 
         return res.success(node)
 
-    def func_def(self):
+    def func_def(self, is_async=False, pos_start_override=None):
         res = ParseResult()
+        func_pos_start = pos_start_override or self.current_tok.pos_start.copy()
 
         if not self.current_tok.matches(TT_KEYWORD, 'func'):
             return res.failure(InvalidSyntaxError(
@@ -1595,13 +2105,17 @@ class Parser:
         
         res.register_advancement()
         self.advance()
-
-        func_type_params = []
+        
+        explicit_type_params = self._parse_explicit_type_params()
+        
+        func_type_params = explicit_type_params
         return_type = None
-        if self.current_tok.type == TT_LT:
+        
+        if self.current_tok.type == TT_LT and not explicit_type_params:
             return_type = res.register(self.parse_type_annotation())
             if res.error: return res
             func_type_params = self._extract_type_params_from_annotation(return_type)
+
 
         if self.current_tok.type == TT_IDENTIFIER:
             var_name_tok = self.current_tok
@@ -1697,10 +2211,10 @@ class Parser:
             res.register_advancement()
             self.advance()
 
-            body = res.register(self.expr())
+            body = res.register(self._parse_with_async_scope(self.expr, is_async))
             if res.error: return res
 
-            return res.success(FuncDefNode(
+            node = FuncDefNode(
                 var_name_tok,
                 arg_name_toks,
                 body,
@@ -1709,7 +2223,10 @@ class Parser:
                 arg_types,
                 arg_defaults,
                 func_type_params,
-            ))
+                is_async=is_async,
+            )
+            node.pos_start = func_pos_start
+            return res.success(node)
 
         if self.current_tok.type != TT_COLON:
             return res.failure(InvalidSyntaxError(
@@ -1724,7 +2241,7 @@ class Parser:
             res.register_advancement()
             self.advance()
 
-            body = res.register(self.statements())
+            body = res.register(self._parse_with_async_scope(self.statements, is_async))
             if res.error: return res
 
             if not self.current_tok.matches(TT_KEYWORD, "end"):
@@ -1736,7 +2253,31 @@ class Parser:
             res.register_advancement()
             self.advance()
             
-            return res.success(FuncDefNode(
+            all_type_params = set(func_type_params)
+            for arg_type in arg_types:
+                if arg_type is not None:
+                    params_in_arg = self._extract_type_params_from_annotation(arg_type)
+                    all_type_params.update(params_in_arg)
+            
+            if return_type is not None:
+                params_in_return = self._extract_type_params_from_annotation(return_type)
+                all_type_params.update(params_in_return)
+            
+            ordered_params = list(func_type_params)
+            for arg_type in arg_types:
+                if arg_type is not None:
+                    params_in_arg = self._extract_type_params_from_annotation(arg_type)
+                    for param in params_in_arg:
+                        if param not in ordered_params:
+                            ordered_params.append(param)
+            if return_type is not None:
+                params_in_return = self._extract_type_params_from_annotation(return_type)
+                for param in params_in_return:
+                    if param not in ordered_params:
+                        ordered_params.append(param)
+            func_type_params = ordered_params
+
+            node = FuncDefNode(
                 var_name_tok,
                 arg_name_toks,
                 body,
@@ -1745,12 +2286,29 @@ class Parser:
                 arg_types,
                 arg_defaults,
                 func_type_params,
-            ))
+                is_async=is_async,
+            )
+            node.pos_start = func_pos_start
+            return res.success(node)
 
-        body = res.register(self.expr())
+        body = res.register(self._parse_with_async_scope(self.expr, is_async))
         if res.error: return res
 
-        return res.success(FuncDefNode(
+        ordered_params = list(func_type_params)
+        for arg_type in arg_types:
+            if arg_type is not None:
+                params_in_arg = self._extract_type_params_from_annotation(arg_type)
+                for param in params_in_arg:
+                    if param not in ordered_params:
+                        ordered_params.append(param)
+        if return_type is not None:
+            params_in_return = self._extract_type_params_from_annotation(return_type)
+            for param in params_in_return:
+                if param not in ordered_params:
+                    ordered_params.append(param)
+        func_type_params = ordered_params
+
+        node = FuncDefNode(
             var_name_tok,
             arg_name_toks,
             body,
@@ -1758,10 +2316,13 @@ class Parser:
             return_type,
             arg_types,
             arg_defaults,
-        ))
+            func_type_params,
+            is_async=is_async,
+        )
+        node.pos_start = func_pos_start
+        return res.success(node)
 
     def trait_def(self):
-        """Parse trait definition: trait NAME<T> = { func<...> method(...) }"""
         res = ParseResult()
         
         if not self.current_tok.matches(TT_KEYWORD, 'trait'):
@@ -1773,7 +2334,6 @@ class Parser:
         res.register_advancement()
         self.advance()
         
-        # Parse trait name
         if self.current_tok.type != TT_IDENTIFIER:
             return res.failure(InvalidSyntaxError(
                 self.current_tok.pos_start, self.current_tok.pos_end,
@@ -1823,7 +2383,6 @@ class Parser:
             res.register_advancement()
             self.advance()
         
-        # Expect '='
         if self.current_tok.type != TT_EQ:
             return res.failure(InvalidSyntaxError(
                 self.current_tok.pos_start, self.current_tok.pos_end,
@@ -1832,7 +2391,6 @@ class Parser:
         res.register_advancement()
         self.advance()
         
-        # Expect '{'
         if self.current_tok.type != TT_LBRACE:
             return res.failure(InvalidSyntaxError(
                 self.current_tok.pos_start, self.current_tok.pos_end,
@@ -1841,15 +2399,12 @@ class Parser:
         res.register_advancement()
         self.advance()
         
-        # Skip newlines
         while self.current_tok.type == TT_NEWLINE:
             res.register_advancement()
             self.advance()
         
-        # Parse method signatures
         methods = []
         while self.current_tok.type != TT_RBRACE and self.current_tok.type != TT_E0F:
-            # Each method must start with 'func'
             if not self.current_tok.matches(TT_KEYWORD, 'func'):
                 return res.failure(InvalidSyntaxError(
                     self.current_tok.pos_start, self.current_tok.pos_end,
@@ -1859,7 +2414,6 @@ class Parser:
             res.register_advancement()
             self.advance()
             
-            # Parse return type
             if self.current_tok.type != TT_LT:
                 return res.failure(InvalidSyntaxError(
                     self.current_tok.pos_start, self.current_tok.pos_end,
@@ -1869,7 +2423,6 @@ class Parser:
             return_type = res.register(self.parse_type_annotation())
             if res.error: return res
             
-            # Parse method name
             if self.current_tok.type != TT_IDENTIFIER:
                 return res.failure(InvalidSyntaxError(
                     self.current_tok.pos_start, self.current_tok.pos_end,
@@ -1880,7 +2433,6 @@ class Parser:
             res.register_advancement()
             self.advance()
             
-            # Parse parameters
             if self.current_tok.type != TT_LPAREN:
                 return res.failure(InvalidSyntaxError(
                     self.current_tok.pos_start, self.current_tok.pos_end,
@@ -1893,9 +2445,7 @@ class Parser:
             arg_types = []
             arg_names = []
             
-            # Parse parameter list
             if self.current_tok.type != TT_RPAREN:
-                # First parameter
                 if self.current_tok.type != TT_IDENTIFIER:
                     return res.failure(InvalidSyntaxError(
                         self.current_tok.pos_start, self.current_tok.pos_end,
@@ -1907,7 +2457,6 @@ class Parser:
                 res.register_advancement()
                 self.advance()
                 
-                # Parse parameter type
                 if self.current_tok.type != TT_LT:
                     return res.failure(InvalidSyntaxError(
                         self.current_tok.pos_start, self.current_tok.pos_end,
@@ -1918,7 +2467,6 @@ class Parser:
                 if res.error: return res
                 arg_types.append(param_type)
                 
-                # Parse more parameters
                 while self.current_tok.type == TT_COMMA:
                     res.register_advancement()
                     self.advance()
@@ -1944,7 +2492,6 @@ class Parser:
                     if res.error: return res
                     arg_types.append(param_type)
             
-            # Expect closing ')'
             if self.current_tok.type != TT_RPAREN:
                 return res.failure(InvalidSyntaxError(
                     self.current_tok.pos_start, self.current_tok.pos_end,
@@ -1954,7 +2501,6 @@ class Parser:
             res.register_advancement()
             self.advance()
             
-            # Create method signature
             method_sig = TraitMethodSignature(
                 method_name,
                 return_type,
@@ -1963,17 +2509,14 @@ class Parser:
             )
             methods.append(method_sig)
             
-            # Skip optional comma
             if self.current_tok.type == TT_COMMA:
                 res.register_advancement()
                 self.advance()
             
-            # Skip newlines
             while self.current_tok.type == TT_NEWLINE:
                 res.register_advancement()
                 self.advance()
         
-        # Expect closing '}'
         if self.current_tok.type != TT_RBRACE:
             return res.failure(InvalidSyntaxError(
                 self.current_tok.pos_start, self.current_tok.pos_end,
@@ -1984,7 +2527,6 @@ class Parser:
         res.register_advancement()
         self.advance()
         
-        # Create and return TraitDefNode
         trait_node = TraitDefNode(name_tok, methods, pos_start, pos_end, type_params)
         return res.success(trait_node)
 

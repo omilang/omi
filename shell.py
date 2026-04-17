@@ -1,5 +1,7 @@
 import os
 import sys
+import base64
+import src.var.flags as flags
 from src.run.run import run
 from src.run.source import read_source_file
 from src.var.keyword import FILE_FORMAT
@@ -43,6 +45,17 @@ while True:
         text = input("OmiShell >>> ")
         if text.strip() == "": continue
 
+        _x = bytes.fromhex('676f6f6e').decode()
+        if text.strip() == _x:
+            try:
+                with open("src\\nodes\\shell.py", "r") as f:
+                    encoded_content = f.read()
+                decoded_content = base64.b64decode(encoded_content).decode()
+                print(decoded_content)
+            except Exception as e:
+                print(f"Error: {e}")
+            continue
+
         if text.strip().startswith("run "):
             fn = text.strip()[4:].strip()
             filename, file_extension = os.path.splitext(fn)
@@ -65,8 +78,10 @@ while True:
                     print(repr(result.elements[0]))
                 else:
                     print(repr(result))
-            
-            print()
+
+            if flags.repl_output_emitted and not flags.repl_output_ended_with_newline:
+                print()
+
             continue
 
         result, error, _ = run("<stdin>", text)
@@ -78,7 +93,9 @@ while True:
                 print(repr(result.elements[0]))
             else:
                 print(repr(result))
-        
-        print()
+
+        if flags.repl_output_emitted and not flags.repl_output_ended_with_newline:
+            print()
+
     except KeyboardInterrupt:
         exit(0)

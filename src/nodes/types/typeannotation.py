@@ -3,7 +3,7 @@ class TypeAnnotationNode:
         self.type_parts = type_parts
         self.array_elem_types = array_elem_types
         self.max_size = max_size
-        self.type_params = type_params or []  # Generic type parameters like ["T"] or ["T", "E"]
+        self.type_params = type_params or []
         self.pos_start = pos_start
         self.pos_end = pos_end
 
@@ -23,7 +23,7 @@ class TypeAnnotationNode:
 class DictTypeAnnotation:
     def __init__(self, fields, pos_start, pos_end, type_params=None, enum_name=None, enum_variants=None):
         self.fields = fields
-        self.type_params = type_params or []  # Generic type parameters like ["T"] or ["T", "E"]
+        self.type_params = type_params or []
         self.enum_name = enum_name
         self.enum_variants = enum_variants or []
         self.pos_start = pos_start

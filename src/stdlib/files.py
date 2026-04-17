@@ -16,6 +16,7 @@ from src.error.message.rt import RTError
 class FilesBuiltInFunction(StdlibFunction):
     def __init__(self, name):
         super().__init__(name)
+        self.is_async = True
 
     def copy(self):
         copy = FilesBuiltInFunction(self.name)

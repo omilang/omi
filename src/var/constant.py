@@ -1,4 +1,5 @@
 import string
+import logging as _logging
 
 DIGITS = "0123456789"
 LETTERS = string.ascii_letters
@@ -10,7 +11,7 @@ SOURCE_FILE_ENCODINGS = (
     "cp1251",
 )
 
-VERSION = "1.3.0"
+VERSION = "1.4.0"
 
 HELP_TEXT = f"""\
 Omi {VERSION}
@@ -31,3 +32,24 @@ LINKS
   Documentation    https://github.com/omilang/docs
   VS Code ext.     https://github.com/omilang/vscode-extension
 """
+
+LEVEL_NAMES = {
+    "DEBUG": _logging.DEBUG,
+    "INFO": _logging.INFO,
+    "WARNING": _logging.WARNING,
+    "ERROR": _logging.ERROR,
+    "CRITICAL": _logging.CRITICAL,
+}
+
+SIZE_UNITS = {
+    "B": 1,
+    "KB": 1024,
+    "MB": 1024 * 1024,
+    "GB": 1024 * 1024 * 1024,
+}
+
+DEFAULT_LOG_LEVEL = "INFO"
+DEFAULT_LOG_FILE = "omi.log"
+DEFAULT_LOG_MODE = "a"
+DEFAULT_MAX_SIZE = "10MB"
+DEFAULT_BACKUP_COUNT = 5
