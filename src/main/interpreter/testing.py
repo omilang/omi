@@ -47,6 +47,12 @@ class InterpreterTestingMixin:
             )
         return None
 
+    def _should_stop_for_failfast(self):
+        reporter = getattr(self, "test_reporter", None)
+        if reporter is None:
+            return False
+        return bool(getattr(reporter, "stop_requested", False))
+
     def _run_test_case_node(self, node, parent_context):
         start_time = time.perf_counter()
 
@@ -144,6 +150,9 @@ class InterpreterTestingMixin:
             return res.success(Number.null)
 
         for child_node in node.body_nodes:
+            if self._should_stop_for_failfast():
+                break
+
             if isinstance(child_node, TestCaseNode):
                 per_test_context = Context(
                     f"test-scope:{child_node.description_tok.value}",
@@ -159,6 +168,8 @@ class InterpreterTestingMixin:
                 if hook_error is not None:
                     duration = 0.0
                     self._report_test_event("record_test", child_node, "failed", duration, hook_error)
+                    if self._should_stop_for_failfast():
+                        break
                     continue
 
                 status, runtime_error, duration = self._run_test_case_node(child_node, per_test_context)
@@ -170,12 +181,16 @@ class InterpreterTestingMixin:
                         runtime_error = after_each_error
 
                 self._report_test_event("record_test", child_node, status, duration, runtime_error)
+                if self._should_stop_for_failfast():
+                    break
                 continue
 
             if isinstance(child_node, SuiteNode):
                 nested_result = self.visit(child_node, suite_context)
                 if nested_result.error:
                     self._report_test_event("record_suite_error", node, nested_result.error)
+                if self._should_stop_for_failfast():
+                    break
                 continue
 
             _ = res.register(self.visit(child_node, suite_context))

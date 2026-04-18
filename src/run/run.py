@@ -9,8 +9,18 @@ from src.values.types.null import Null
 from src.values.function.buildin import BuiltInFunction
 from src.preprocessor import process
 from src.run.async_runtime import ensure_event_loop, run_pending_tasks
+from src.linter import LintRunner
+from src.linter.context import LintOptions
 import src.var.flags as flags
 import asyncio
+
+
+class LintAbortError:
+    def __init__(self, message):
+        self.message = message
+
+    def as_string(self):
+        return self.message
 
 global_symbol_table = SymbolTable()
 global_symbol_table.set("null", Null())
@@ -76,17 +86,55 @@ global_symbol_table.set("range", BuiltInFunction.range)
 global_symbol_table.set("eval", BuiltInFunction.eval)
 global_symbol_table.set("cancel", BuiltInFunction.cancel)
 
-def run(fn, text, preserve_flags=False):
+def run(fn, text, preserve_flags=False, lint_options=None):
     if not preserve_flags:
         flags.debug = False
         flags.noecho = False
         flags.eval_enabled = False
         flags.notypes = False
         flags.noasync = False
+        flags.use_json = False
+        flags.use_fix = False
+        flags.use_failfast = False
+        flags.use_level = None
+        flags.use_rules = None
+        flags.use_config = None
+        flags.use_save = None
         flags.repl_output_emitted = False
         flags.repl_output_ended_with_newline = True
 
-    clean_text = process(text)
+    script_text = text
+
+    if lint_options is not None:
+        try:
+            runner = LintRunner(
+                config_path=lint_options.config_path,
+                level=lint_options.level,
+                rules=lint_options.rules,
+                fix=lint_options.fix,
+                json_output=lint_options.json_output,
+                failfast=lint_options.failfast,
+            )
+            lint_result = runner.lint_source(fn, script_text)
+        except ValueError as e:
+            return None, LintAbortError(str(e)), {}
+
+        if lint_options.json_output:
+            print(lint_result.report.to_json())
+        else:
+            print(lint_result.report.to_text())
+
+        fixed_source = lint_result.fixed_sources.get(fn)
+        if fixed_source is not None:
+            script_text = fixed_source
+            if fn != "<stdin>":
+                with open(fn, "w", encoding="utf-8", newline="") as handle:
+                    handle.write(script_text)
+
+        if lint_options.failfast and lint_result.report.summary.get("errors", 0) > 0:
+            return None, LintAbortError("Lint failed: execution stopped"), {}
+
+    clean_text = process(script_text)
 
     lexer = Lexer(fn, clean_text)
     tokens, error = lexer.make_tokens()

@@ -58,6 +58,7 @@ from src.var.token import (
     TT_PIPE,
     TT_GT,
     TT_QUESTION,
+    TT_E0F,
 )
 
 
@@ -702,7 +703,38 @@ class ParserExpressionsStatementsMixin:
                 res.register_advancement()
                 self.advance()
 
-                return res.success(UseDirectiveNode(directive_tok.value, pos_start, self.current_tok.pos_start.copy()))
+                directive_name = str(directive_tok.value).lower()
+                value = None
+                has_as = False
+
+                value_token_types = (TT_IDENTIFIER, TT_KEYWORD, TT_STRING, TT_INT, TT_FLOAT)
+
+                if self.current_tok.matches(TT_KEYWORD, "as"):
+                    has_as = True
+                    res.register_advancement()
+                    self.advance()
+                    if self.current_tok.type not in value_token_types:
+                        return res.failure(InvalidSyntaxError(
+                            self.current_tok.pos_start,
+                            self.current_tok.pos_end,
+                            "Expected value after 'as' in '@use'",
+                        ))
+                    value = str(self.current_tok.value)
+                    res.register_advancement()
+                    self.advance()
+                elif directive_name in {"config", "save"} and self.current_tok.type in value_token_types:
+                    value = str(self.current_tok.value)
+                    res.register_advancement()
+                    self.advance()
+
+                if self.current_tok.type not in (TT_NEWLINE, TT_E0F):
+                    return res.failure(InvalidSyntaxError(
+                        self.current_tok.pos_start,
+                        self.current_tok.pos_end,
+                        "Unexpected tokens after '@use' directive",
+                    ))
+
+                return res.success(UseDirectiveNode(directive_tok.value, pos_start, self.current_tok.pos_start.copy(), value=value, has_as=has_as))
 
             if self.current_tok.matches(TT_KEYWORD, "set"):
                 res.register_advancement()

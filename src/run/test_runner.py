@@ -1,4 +1,5 @@
 import asyncio
+import json
 import os
 import time
 
@@ -16,11 +17,13 @@ import src.var.flags as runtime_flags
 
 
 class TestReporter:
-    def __init__(self):
+    def __init__(self, failfast=False):
         self._suite_stack = []
         self.events = []
         self.records = []
         self.suite_errors = []
+        self.failfast = bool(failfast)
+        self.stop_requested = False
 
     def begin_suite(self, suite_node):
         suite_name = suite_node.name_tok.value
@@ -48,12 +51,16 @@ class TestReporter:
         }
         self.records.append(record)
         self.events.append(("test", depth, record))
+        if self.failfast and status == "failed":
+            self.stop_requested = True
 
     def record_suite_error(self, suite_node, error):
         suite_name = suite_node.name_tok.value
         depth = len(self._suite_stack)
         self.suite_errors.append((suite_name, error))
         self.events.append(("suite_error", depth, suite_name, error))
+        if self.failfast:
+            self.stop_requested = True
 
 
 class _Colors:
@@ -106,8 +113,8 @@ def _discover_test_files(path):
     return discovered
 
 
-def _run_test_file(file_path):
-    reporter = TestReporter()
+def _run_test_file(file_path, failfast=False):
+    reporter = TestReporter(failfast=failfast)
 
     runtime_flags.debug = False
     runtime_flags.noecho = False
@@ -223,11 +230,102 @@ def _print_report(file_result):
     print("")
 
 
-def run_tests(path):
+def _build_file_json_result(file_result):
+    reporter = file_result["reporter"]
+    passed = 0
+    failed = 0
+    skipped = 0
+
+    records = []
+    for record in reporter.records:
+        if record["status"] == "passed":
+            passed += 1
+        elif record["status"] == "failed":
+            failed += 1
+        elif record["status"] == "skipped":
+            skipped += 1
+
+        records.append({
+            "suite_path": list(record["suite_path"]),
+            "description": record["description"],
+            "status": record["status"],
+            "duration": round(record["duration"], 6),
+            "error": _format_runtime_error(record["error"]) if record["error"] is not None else None,
+        })
+
+    suite_errors = [
+        {
+            "suite": suite_name,
+            "error": _format_runtime_error(error),
+        }
+        for suite_name, error in reporter.suite_errors
+    ]
+
+    fatal_error = file_result["fatal_error"]
+    if fatal_error is not None:
+        failed += 1
+
+    return {
+        "file": file_result["file"],
+        "duration": round(file_result["duration"], 6),
+        "passed": passed,
+        "failed": failed + len(suite_errors),
+        "skipped": skipped,
+        "stopped_early": bool(reporter.stop_requested),
+        "fatal_error": _format_runtime_error(fatal_error) if fatal_error is not None else None,
+        "suite_errors": suite_errors,
+        "tests": records,
+    }
+
+
+def _write_json_report(save_path, payload):
+    if not save_path:
+        return None
+    try:
+        with open(save_path, "w", encoding="utf-8") as report_file:
+            json.dump(payload, report_file, ensure_ascii=False, indent=2)
+    except Exception as exc:
+        return f"Failed to save JSON report to '{save_path}': {exc}"
+    return None
+
+
+def run_tests(path, failfast=False, json_output=False, save_path=None):
     test_files = _discover_test_files(path)
 
+    if save_path is None and len(test_files) > 0:
+        if os.path.isdir(path):
+            dir_name = os.path.basename(os.path.abspath(path))
+            save_path = f"{dir_name}-test.json"
+        elif os.path.isfile(path) and len(test_files) == 1:
+            file_name = os.path.basename(test_files[0])
+            if file_name.endswith(TEST_FILE_EXTENSION):
+                name_without_ext = file_name[: -len(TEST_FILE_EXTENSION)]
+                save_path = f"{name_without_ext}-test.json"
+        elif len(test_files) > 1:
+            save_path = "test-report.json"
+
     if not test_files:
-        print("No .test.omi files found")
+        empty_payload = {
+            "path": os.path.abspath(path),
+            "failfast": bool(failfast),
+            "stopped_early": False,
+            "summary": {
+                "passed": 0,
+                "failed": 0,
+                "skipped": 0,
+                "duration": 0.0,
+            },
+            "files": [],
+        }
+        if json_output:
+            print(json.dumps(empty_payload, ensure_ascii=False, indent=2))
+        else:
+            print("No .test.omi files found")
+
+        save_error = _write_json_report(save_path, empty_payload)
+        if save_error is not None:
+            print(save_error)
+            return 1
         return 0
 
     total_start = time.perf_counter()
@@ -236,25 +334,28 @@ def run_tests(path):
     total_failed = 0
     total_skipped = 0
     had_fatal = False
+    stopped_early = False
+    file_reports = []
 
     for file_path in test_files:
-        file_result = _run_test_file(file_path)
-        _print_report(file_result)
+        file_result = _run_test_file(file_path, failfast=failfast)
+        if not json_output:
+            _print_report(file_result)
+
+        file_json = _build_file_json_result(file_result)
+        file_reports.append(file_json)
 
         reporter = file_result["reporter"]
-        for record in reporter.records:
-            if record["status"] == "passed":
-                total_passed += 1
-            elif record["status"] == "failed":
-                total_failed += 1
-            elif record["status"] == "skipped":
-                total_skipped += 1
-
-        total_failed += len(reporter.suite_errors)
+        total_passed += file_json["passed"]
+        total_failed += file_json["failed"]
+        total_skipped += file_json["skipped"]
 
         if file_result["fatal_error"] is not None:
             had_fatal = True
-            total_failed += 1
+
+        if failfast and reporter.stop_requested:
+            stopped_early = True
+            break
 
     total_duration = time.perf_counter() - total_start
 
@@ -263,9 +364,36 @@ def run_tests(path):
         f"{total_skipped} skipped ({total_duration:.3f}s total)"
     )
 
-    if total_failed > 0 or had_fatal:
-        print(_color(summary, _Colors.RED))
+    payload = {
+        "path": os.path.abspath(path),
+        "failfast": bool(failfast),
+        "stopped_early": bool(stopped_early),
+        "summary": {
+            "passed": total_passed,
+            "failed": total_failed,
+            "skipped": total_skipped,
+            "duration": round(total_duration, 6),
+        },
+        "files": file_reports,
+    }
+
+    if json_output:
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+
+    save_error = _write_json_report(save_path, payload)
+    if save_error is not None:
+        print(save_error)
         return 1
 
-    print(_color(summary, _Colors.GREEN))
+    if total_failed > 0 or had_fatal:
+        if not json_output:
+            print(_color(summary, _Colors.RED))
+            if stopped_early:
+                print(_color("Stopped early because --failfast is enabled", _Colors.YELLOW))
+        return 1
+
+    if not json_output:
+        print(_color(summary, _Colors.GREEN))
+        if stopped_early:
+            print(_color("Stopped early because --failfast is enabled", _Colors.YELLOW))
     return 0

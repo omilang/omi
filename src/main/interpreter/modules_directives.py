@@ -11,7 +11,7 @@ from src.values.function.enumvariant import EnumVariantConstructor
 from src.values.types.module import Module
 from src.values.types.number import Number
 from src.var.builtin import BUILTIN_MODULES
-from src.var.keyword import FILE_FORMAT
+from src.var.keyword import FILE_FORMAT, is_test_file
 
 
 class InterpreterModulesDirectivesMixin:
@@ -167,6 +167,7 @@ class InterpreterModulesDirectivesMixin:
 
     def visit_UseDirectiveNode(self, node, context):
         directive = node.directive.lower()
+        value = None if node.value is None else str(node.value).strip()
         if directive not in runtime_flags.VALID_DIRECTIVES:
             return RTResult().failure(RTError(
                 node.pos_start,
@@ -174,6 +175,24 @@ class InterpreterModulesDirectivesMixin:
                 f"Unknown directive '@use {directive}'. Valid: {', '.join(sorted(runtime_flags.VALID_DIRECTIVES))}",
                 context,
             ))
+
+        if directive in {"level", "rules"}:
+            if not node.has_as or not value:
+                return RTResult().failure(RTError(
+                    node.pos_start,
+                    node.pos_end,
+                    f"Directive '@use {directive}' requires a value: @use {directive} as <value>",
+                    context,
+                ))
+
+        if directive == "save" and not is_test_file(node.pos_start.fn):
+            return RTResult().failure(RTError(
+                node.pos_start,
+                node.pos_end,
+                "Directive '@use save' is available only in .test.omi files",
+                context,
+            ))
+
         if directive == "debug":
             runtime_flags.debug = True
         elif directive == "noecho":
@@ -184,6 +203,20 @@ class InterpreterModulesDirectivesMixin:
             runtime_flags.notypes = True
         elif directive == "noasync":
             runtime_flags.noasync = True
+        elif directive == "json":
+            runtime_flags.use_json = True
+        elif directive == "fix":
+            runtime_flags.use_fix = True
+        elif directive == "failfast":
+            runtime_flags.use_failfast = True
+        elif directive == "level":
+            runtime_flags.use_level = value.lower() if value else None
+        elif directive == "rules":
+            runtime_flags.use_rules = value
+        elif directive == "config":
+            runtime_flags.use_config = value
+        elif directive == "save":
+            runtime_flags.use_save = value
         return RTResult().success(Number.null)
 
     def visit_TypeAliasNode(self, node, context):
