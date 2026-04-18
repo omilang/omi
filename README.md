@@ -23,10 +23,20 @@
 
 > Requires [Python](https://www.python.org/downloads/) >= 3.11
 
+### Install from PyPI
+
+```bash
+pip install omilang
+omi
+```
+
+### Install from source
+
 ```bash
 git clone https://github.com/OmiLang/Omi.git
 cd Omi
-python shell.py
+pip install -e .
+omi
 ```
 
 Run a file:
@@ -38,7 +48,7 @@ OmiShell >>> run example.omi
 or
 
 ```
-python shell.py run example.omi
+omi run example.omi
 ```
 
 <!-- js highlights OmiLang syntax better than plain text -->

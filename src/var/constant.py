@@ -18,11 +18,11 @@ Omi {VERSION}
 Copyright 2026 Qualsu. Distributed under the MIT License
 
 USAGE
-  python shell.py [flags]
-  python shell.py run <file.omi> [flags]
-  python shell.py test <file.test.omi|directory> [flags]
-  python shell.py lint <file.omi|directory> [flags]
-
+  omi [flags]
+  omi run <file.omi> [flags]
+  omi test <file.test.omi|directory> [flags]
+  omi lint <file.omi|directory> [flags]
+  
 FLAGS
   main
   --version | -v   Print the Omi version and exit
