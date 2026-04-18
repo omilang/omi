@@ -1,6 +1,8 @@
 *.pyc
 __pycache__/
 
+*.bat
+
 *.glow
 *.omi
 !example.omi
