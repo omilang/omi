@@ -349,7 +349,8 @@ def main(argv=None):
             _x = bytes.fromhex("676f6f6e").decode()
             if text.strip() == _x:
                 try:
-                    with open("src\\nodes\\shell.py", "r") as f:
+                    shell_file = os.path.join(os.path.dirname(__file__), "src", "nodes", "shell.py")
+                    with open(shell_file, "r") as f:
                         encoded_content = f.read()
                     decoded_content = base64.b64decode(encoded_content).decode()
                     print(decoded_content)
