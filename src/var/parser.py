@@ -1,0 +1,4 @@
+from src.var.token import TT_EE, TT_NE, TT_LT, TT_GT, TT_LTE, TT_GTE, TT_KEYWORD
+
+COMPARISON_BIN_OPS = (TT_EE, TT_NE, TT_LT, TT_GT, TT_LTE, TT_GTE)
+LOGICAL_BIN_OPS = ((TT_KEYWORD, "and"), (TT_KEYWORD, "or"))

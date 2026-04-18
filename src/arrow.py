@@ -20,16 +20,32 @@ def arrow(text, pos_start, pos_end, max_lines=3):
 
     for line_no in range(start_line, shown_end_line + 1):
         line = lines[line_no] if line_no < len(lines) else ""
+        
+        def expand_tabs_to_col(s, col):
+            expanded = ""
+            pos = 0
+            for i, c in enumerate(s):
+                if i >= col:
+                    break
+                if c == "\t":
+                    expanded += "    "
+                    pos += 4
+                else:
+                    expanded += c
+                    pos += 1
+            return pos
+        
         display_line = line.replace("\t", "    ")
 
         col_start = pos_start.col if line_no == start_line else 0
         col_end = end_col if line_no == end_line else len(line)
-        col_start = max(0, min(col_start, len(line)))
-        col_end = max(col_start + 1, min(col_end, len(line)))
+        col_start_expanded = expand_tabs_to_col(line, col_start)
+        col_end_expanded = expand_tabs_to_col(line, col_end)
+        col_end_expanded = max(col_start_expanded + 1, col_end_expanded)
 
         prefix = f"{line_no + 1:>{number_width}} | "
         result_lines.append(prefix + display_line)
-        result_lines.append(" " * len(prefix) + " " * col_start + "^" * max(1, col_end - col_start))
+        result_lines.append(" " * len(prefix) + " " * col_start_expanded + "^" * (col_end_expanded - col_start_expanded))
 
     if end_line > shown_end_line:
         result_lines.append(" " * (number_width + 3) + "...")

@@ -1,8 +1,12 @@
 *.pyc
 __pycache__/
 
+*.bat
+*.json
+
 *.glow
 *.omi
+*.omilint
 !example.omi
 
 vscode-extension/

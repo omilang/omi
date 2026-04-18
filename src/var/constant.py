@@ -11,20 +11,34 @@ SOURCE_FILE_ENCODINGS = (
     "cp1251",
 )
 
-VERSION = "1.4.0"
+VERSION = "1.5.0"
 
 HELP_TEXT = f"""\
 Omi {VERSION}
-Copyright 2026 Qualsu. Distributed under the MIT License.
+Copyright 2026 Qualsu. Distributed under the MIT License
 
 USAGE
   python shell.py [flags]
   python shell.py run <file.omi> [flags]
+  python shell.py test <file.test.omi|directory> [flags]
+  python shell.py lint <file.omi|directory> [flags]
 
 FLAGS
+  main
   --version | -v   Print the Omi version and exit
   --help    | -h   Show this help message and exit
   --debug   | -d   Print the parsed AST result after execution
+  lint
+  --fix            Apply auto-fixes when possible
+  --json           Print lint report as JSON
+  --failfast       Stop after lint errors when used with run --lint
+  --level=<name>   Filter by severity level
+  --rules=<list>   Comma-separated list of rule names
+  --config[=path]  Load lint config from .omilint or the provided path
+  test
+  --failfast       Stop after first failed test
+  --json           Print test report as JSON
+  --save[=path]    Save JSON report to file
 
 LINKS
   Website          https://omilang.fun
