@@ -11,7 +11,7 @@ SOURCE_FILE_ENCODINGS = (
     "cp1251",
 )
 
-VERSION = "1.4.0"
+VERSION = "1.5.0"
 
 HELP_TEXT = f"""\
 Omi {VERSION}
@@ -20,6 +20,7 @@ Copyright 2026 Qualsu. Distributed under the MIT License.
 USAGE
   python shell.py [flags]
   python shell.py run <file.omi> [flags]
+  python shell.py test <file.test.omi|directory> [flags]
 
 FLAGS
   --version | -v   Print the Omi version and exit

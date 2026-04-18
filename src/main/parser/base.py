@@ -1,4 +1,5 @@
 from src.error.message.invalidsyntax import InvalidSyntaxError
+from src.var.keyword import is_test_file
 from src.var.token import (
     TT_IDENTIFIER,
     TT_KEYWORD,
@@ -16,6 +17,11 @@ class ParserBaseMixin:
         self.tokens = tokens
         self.tok_idx = -1
         self.function_async_depth = 0
+        first_fn = None
+        if tokens and getattr(tokens[0], "pos_start", None) is not None:
+            first_fn = getattr(tokens[0].pos_start, "fn", None)
+        self.is_test_mode = is_test_file(first_fn)
+        self.suite_depth = 0
         self.advance()
 
     def advance(self):
@@ -35,6 +41,8 @@ class ParserBaseMixin:
     def describe_token(self, tok=None):
         tok = tok or self.current_tok
 
+        if tok.type == TT_E0F:
+            return "end of input"
         if tok.type in (TT_IDENTIFIER, TT_KEYWORD, TT_INT, TT_FLOAT):
             return repr(tok.value)
         if tok.type in (TT_STRING, TT_FSTRING):
@@ -44,9 +52,13 @@ class ParserBaseMixin:
     def parse(self):
         res = self.statements()
         if not res.error and self.current_tok.type != TT_E0F:
+            if self.current_tok.type == TT_E0F:
+                message = "Unexpected end of input. Expected end of statement."
+            else:
+                message = f"Unexpected {self.describe_token()}. Expected end of statement."
             return res.failure(InvalidSyntaxError(
                 self.current_tok.pos_start,
                 self.current_tok.pos_end,
-                f"Unexpected {self.describe_token()}. Expected end of statement.",
+                message,
             ))
         return res

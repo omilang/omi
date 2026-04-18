@@ -10,6 +10,7 @@ def _build_type_map():
     from src.values.types.boolean import Boolean
     from src.values.types.null import Null
     from src.values.types.void import Void
+    from src.values.types.pythonlib import PythonLibValue
     from src.values.function.base import BaseFunction
     from src.values.future import FutureValue
     from src.stdlib.http import HTTPResponse
@@ -24,6 +25,7 @@ def _build_type_map():
         "bool":   lambda v: isinstance(v, Boolean),
         "func":   lambda v: isinstance(v, BaseFunction),
         "call":   lambda v: isinstance(v, BaseFunction),
+        "pylib":  lambda v: isinstance(v, PythonLibValue),
         "future": lambda v: isinstance(v, FutureValue),
         "httpresponse": lambda v: isinstance(v, HTTPResponse),
         "null":   lambda v: isinstance(v, Null),
@@ -307,6 +309,7 @@ def _type_name(value):
     from src.values.types.boolean import Boolean
     from src.values.types.null import Null
     from src.values.types.void import Void
+    from src.values.types.pythonlib import PythonLibValue
     from src.values.function.base import BaseFunction
     from src.values.future import FutureValue
 
@@ -328,6 +331,8 @@ def _type_name(value):
         return "dict"
     if isinstance(value, BaseFunction):
         return "call"
+    if isinstance(value, PythonLibValue):
+        return "pylib"
     if isinstance(value, FutureValue):
         return "future"
     return type(value).__name__.lower()
@@ -341,7 +346,7 @@ def _check_dict_type(value, dict_ann, context, pos_start, pos_end):
         actual = _type_name(value)
         return RTError(
             pos_start, pos_end,
-            f"Type error: expected dict type '{dict_ann}', got {actual}",
+            f"Type error: expected dict type '{dict_ann}', got {actual}. Use the declared fields and types for that alias.",
             context
         )
 
@@ -355,7 +360,7 @@ def _check_dict_type(value, dict_ann, context, pos_start, pos_end):
                 continue
             return RTError(
                 pos_start, pos_end,
-                f"Dict is missing required field '{field_name}'",
+                f"Dict is missing required field '{field_name}' for type '{dict_ann}'",
                 context
             )
 
@@ -379,7 +384,7 @@ def _check_enum_type(value, enum_ann, context, pos_start, pos_end):
         actual = _type_name(value)
         return RTError(
             pos_start, pos_end,
-            f"Type error: expected enum type '{enum_ann.enum_name}', got {actual}",
+            f"Type error: expected enum type '{enum_ann.enum_name}', got {actual}. Enums are stored as tagged dicts.",
             context,
         )
 
@@ -387,7 +392,7 @@ def _check_enum_type(value, enum_ann, context, pos_start, pos_end):
     if tag_value is None:
         return RTError(
             pos_start, pos_end,
-            f"Enum '{enum_ann.enum_name}' is missing required field '__tag'",
+            f"Enum '{enum_ann.enum_name}' is missing required field '__tag'. Use '__tag' to select a variant.",
             context,
         )
 
@@ -401,9 +406,10 @@ def _check_enum_type(value, enum_ann, context, pos_start, pos_end):
     tag_name = tag_value.value
     variant_map = {name: payload for name, payload in enum_ann.enum_variants}
     if tag_name not in variant_map:
+        available_variants = ", ".join(sorted(variant_map.keys())) or "(none)"
         return RTError(
             pos_start, pos_end,
-            f"Enum '{enum_ann.enum_name}' does not define variant '{tag_name}'",
+            f"Enum '{enum_ann.enum_name}' does not define variant '{tag_name}'. Available variants: {available_variants}",
             context,
         )
 

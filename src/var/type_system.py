@@ -7,6 +7,7 @@ CONCRETE_TYPE_NAMES = {
     "array",
     "dict",
     "call",
+    "pylib",
     "void",
     "null",
     "every",

@@ -588,6 +588,63 @@ class ParserExpressionsStatementsMixin:
         res = ParseResult()
         pos_start = self.current_tok.pos_start.copy()
 
+        if self.is_test_mode:
+            if self.current_tok.matches(TT_KEYWORD, "suite"):
+                suite_node = res.register(self._parse_suite_statement())
+                if res.error:
+                    return res
+                return res.success(suite_node)
+
+            if self.current_tok.matches(TT_KEYWORD, "test"):
+                test_node = res.register(self._parse_test_case_statement())
+                if res.error:
+                    return res
+                return res.success(test_node)
+
+            if self.current_tok.matches(TT_KEYWORD, "async"):
+                next_idx = self.tok_idx + 1
+                if next_idx < len(self.tokens) and self.tokens[next_idx].matches(TT_KEYWORD, "test"):
+                    async_tok = self.current_tok
+                    res.register_advancement()
+                    self.advance()
+                    test_node = res.register(self._parse_test_case_statement(
+                        is_async=True,
+                        pos_start_override=async_tok.pos_start.copy(),
+                    ))
+                    if res.error:
+                        return res
+                    return res.success(test_node)
+
+            if self.current_tok.matches(TT_KEYWORD, "skip"):
+                skip_tok = self.current_tok
+                res.register_advancement()
+                self.advance()
+                if not self.current_tok.matches(TT_KEYWORD, "test"):
+                    return res.failure(InvalidSyntaxError(
+                        self.current_tok.pos_start,
+                        self.current_tok.pos_end,
+                        "Expected 'test' after 'skip'",
+                    ))
+                test_node = res.register(self._parse_test_case_statement(
+                    is_skipped=True,
+                    pos_start_override=skip_tok.pos_start.copy(),
+                ))
+                if res.error:
+                    return res
+                return res.success(test_node)
+
+            if self.current_tok.matches(TT_KEYWORD, "expect"):
+                expect_node = res.register(self._parse_expect_statement())
+                if res.error:
+                    return res
+                return res.success(expect_node)
+
+            if self.suite_depth > 0 and self.current_tok.type == TT_KEYWORD and self.current_tok.value in self.HOOK_KEYWORDS:
+                hook_node = res.register(self._parse_hook_statement())
+                if res.error:
+                    return res
+                return res.success(hook_node)
+
         if self.current_tok.type == TT_AT:
             res.register_advancement()
             self.advance()

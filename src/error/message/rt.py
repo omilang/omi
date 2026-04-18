@@ -3,27 +3,29 @@ from src.arrow import arrow
 
 
 class RTError(Error):
-    def __init__(self, pos_start, pos_end, details, context):
+    def __init__(self, pos_start, pos_end, details, context, is_test_assertion=False):
         super().__init__(pos_start, pos_end, "Runtime Error", details)
         self.context = context
+        self.is_test_assertion = is_test_assertion
         self.name = type(self).__name__
         self.trace = self.generate_traceback()
 
     def as_string(self):
-        result = "\n".join(self.trace) + "\n"
-        result += f"{self.error_name}: {self.details}"
+        lines = list(self.trace)
+        lines.append(f"{self.error_name}: {self.details}")
 
-        frame = arrow(self.pos_start.ftxt, self.pos_start, self.pos_end)
+        frame = self._format_frame()
         if frame:
-            result += f"\n{frame}"
+            lines.append(frame)
 
-        return result
+        return "\n".join(lines)
 
     def as_dict(self):
         return {
             "type": self.name,
             "msg": self.details,
             "trace": self.trace,
+            "is_test_assertion": self.is_test_assertion,
         }
 
     def generate_traceback(self):
@@ -32,7 +34,8 @@ class RTError(Error):
         ctx = self.context
 
         while ctx:
-            lines.append(f"  File {pos.fn}, line {pos.ln + 1}, in {ctx.display_name}")
+            filename = pos.fn or "<unknown>"
+            lines.append(f"  at {filename}:{pos.ln + 1}:{pos.col + 1} in {ctx.display_name}")
             pos = ctx.parent_entry_pos if ctx.parent_entry_pos else pos
             ctx = ctx.parent
 

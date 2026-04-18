@@ -3,8 +3,9 @@ import sys
 import base64
 import src.var.flags as flags
 from src.run.run import run
+from src.run.test_runner import run_tests
 from src.run.source import read_source_file
-from src.var.keyword import FILE_FORMAT
+from src.var.keyword import FILE_FORMAT, TEST_FILE_EXTENSION
 from src.var.constant import VERSION, HELP_TEXT
 
 debug = ("--debug" in sys.argv) or ("-d" in sys.argv)
@@ -39,6 +40,21 @@ if len(_args) >= 2 and _args[0] == "run":
         else:
             print(repr(result))
     sys.exit(0)
+
+if len(_args) >= 2 and _args[0] == "test":
+    target = _args[1]
+    if os.path.isfile(target) and not target.lower().endswith(TEST_FILE_EXTENSION):
+        print("RTError: Test files must have .test.omi extension")
+        sys.exit(1)
+    try:
+        exit_code = run_tests(target)
+    except ValueError as e:
+        print(str(e))
+        sys.exit(1)
+    except Exception as e:
+        print(f"Failed to run tests for '{target}'\n{e}")
+        sys.exit(1)
+    sys.exit(exit_code)
 
 while True:
     try:
@@ -78,6 +94,24 @@ while True:
                     print(repr(result.elements[0]))
                 else:
                     print(repr(result))
+
+            if flags.repl_output_emitted and not flags.repl_output_ended_with_newline:
+                print()
+
+            continue
+
+        if text.strip().startswith("test "):
+            target = text.strip()[5:].strip()
+            if os.path.isfile(target) and not target.lower().endswith(TEST_FILE_EXTENSION):
+                print("RTError: Test files must have .test.omi extension")
+                continue
+
+            try:
+                run_tests(target)
+            except ValueError as e:
+                print(str(e))
+            except Exception as e:
+                print(f"Failed to run tests for '{target}'\n{e}")
 
             if flags.repl_output_emitted and not flags.repl_output_ended_with_newline:
                 print()

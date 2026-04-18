@@ -1,24 +1,27 @@
 from src.var.token import *
 from src.var.constant import LETTERS
 from src.var.constant import *
-from src.var.keyword import KEYWORDS
+from src.var.keyword import get_keywords_for_file
 from src.tokens import Token
+from src.error.message.invalidsyntax import InvalidSyntaxError
 from src.error.message.illegalchar import IllegalCharError
 from src.error.message.expectedchar import ExpectedCharError
 from src.position import Position
 from src.var.token import TT_QUESTION, TT_NULLCOAL
 
+
 class Lexer():
     def __init__(self, fn, text):
         self.fn = fn
         self.text = text
+        self.keywords = set(get_keywords_for_file(fn))
         self.pos = Position(-1, 0, -1, fn, text)
         self.current_char = None
         self.advance()
 
     def advance(self):
         self.pos.advance(self.current_char)
-        self.current_char = self.text[self.pos.idx] if self.pos.idx < len(self.text) else None    
+        self.current_char = self.text[self.pos.idx] if self.pos.idx < len(self.text) else None
 
     def make_tokens(self):
         tokens = []
@@ -31,15 +34,15 @@ class Lexer():
                 self.advance()
             elif self.current_char == "/" and self.pos.idx + 1 < len(self.text) and self.text[self.pos.idx + 1] == "/":
                 self.skip_comment()
-
             elif self.current_char in DIGITS:
                 tokens.append(self.make_number())
             elif self.current_char in LETTERS or self.current_char == "_":
                 tokens.append(self.make_identifier())
-            
             elif self.current_char == '"':
-                tokens.append(self.make_string())
-
+                string_tok, error = self.make_string()
+                if error:
+                    return [], error
+                tokens.append(string_tok)
             elif self.current_char == "+":
                 tokens.append(Token(TT_PLUS, pos_start=self.pos))
                 self.advance()
@@ -51,10 +54,9 @@ class Lexer():
             elif self.current_char == "/":
                 tokens.append(Token(TT_DIV, pos_start=self.pos))
                 self.advance()
-            elif self.current_char == "^": 
+            elif self.current_char == "^":
                 tokens.append(Token(TT_POW, pos_start=self.pos))
                 self.advance()
-
             elif self.current_char == "(":
                 tokens.append(Token(TT_LPAREN, pos_start=self.pos))
                 self.advance()
@@ -73,19 +75,17 @@ class Lexer():
             elif self.current_char == "}":
                 tokens.append(Token(TT_RBRACE, pos_start=self.pos))
                 self.advance()
-
             elif self.current_char == "!":
                 tok, error = self.make_not_equals()
-                if error: return [], error
+                if error:
+                    return [], error
                 tokens.append(tok)
-
-            elif self.current_char == "=": 
+            elif self.current_char == "=":
                 tokens.append(self.make_equals())
-            elif self.current_char == "<": 
+            elif self.current_char == "<":
                 tokens.append(self.make_less_than())
-            elif self.current_char == ">": 
+            elif self.current_char == ">":
                 tokens.append(self.make_greater_than())
-
             elif self.current_char == ",":
                 tokens.append(Token(TT_COMMA, pos_start=self.pos))
                 self.advance()
@@ -106,16 +106,15 @@ class Lexer():
                 self.advance()
             elif self.current_char == "?":
                 tokens.append(self.make_question_or_nullcoal())
-
             else:
                 pos_start = self.pos.copy()
                 char = self.current_char
                 self.advance()
-                return [], IllegalCharError(pos_start, self.pos, f"'{char}'")
+                return [], IllegalCharError(pos_start, self.pos, f"Unsupported character {char!r}")
 
         tokens.append(Token(TT_E0F, pos_start=self.pos))
         return tokens, None
-    
+
     def make_number(self):
         num_str = ""
         dot_count = 0
@@ -123,7 +122,8 @@ class Lexer():
 
         while self.current_char != None and self.current_char in DIGITS + ".":
             if self.current_char == ".":
-                if dot_count == 1: break
+                if dot_count == 1:
+                    break
                 dot_count += 1
                 num_str += "."
             else:
@@ -132,9 +132,8 @@ class Lexer():
 
         if dot_count == 0:
             return Token(TT_INT, int(num_str), pos_start, self.pos)
-        else:
-            return Token(TT_FLOAT, float(num_str), pos_start, self.pos)
-        
+        return Token(TT_FLOAT, float(num_str), pos_start, self.pos)
+
     def make_string(self):
         string = ""
         pos_start = self.pos.copy()
@@ -143,6 +142,7 @@ class Lexer():
         interp_depth = 0
         inner_str_quote = None
         inner_escape = False
+        closed_quote = False
         self.advance()
 
         while self.current_char is not None:
@@ -193,7 +193,8 @@ class Lexer():
                 escape_character = True
                 self.advance()
             elif ch == '"':
-                break 
+                closed_quote = True
+                break
             elif ch == '~':
                 has_interp = True
                 string += '~'
@@ -206,9 +207,16 @@ class Lexer():
                 string += ch
                 self.advance()
 
+        if not closed_quote:
+            return None, InvalidSyntaxError(
+                pos_start,
+                self.pos,
+                'String literal is missing closing "',
+            )
+
         self.advance()
         tok_type = TT_FSTRING if has_interp else TT_STRING
-        return Token(tok_type, string, pos_start, self.pos)
+        return Token(tok_type, string, pos_start, self.pos), None
 
     def make_identifier(self):
         id_str = ""
@@ -218,9 +226,9 @@ class Lexer():
             id_str += self.current_char
             self.advance()
 
-        tok_type = TT_KEYWORD if id_str in KEYWORDS else TT_IDENTIFIER
+        tok_type = TT_KEYWORD if id_str in self.keywords else TT_IDENTIFIER
         return Token(tok_type, id_str, pos_start, self.pos)
-    
+
     def make_not_equals(self):
         pos_start = self.pos.copy()
         self.advance()
@@ -228,10 +236,10 @@ class Lexer():
         if self.current_char == "=":
             self.advance()
             return Token(TT_NE, pos_start=pos_start, pos_end=self.pos), None
-        
+
         self.advance()
-        return None, ExpectedCharError(pos_start, self.pos, "'=' (after '!')")
-    
+        return None, ExpectedCharError(pos_start, self.pos, "Expected '=' after '!' to form '!='")
+
     def make_minus_or_arrow(self):
         tok_type = TT_MINUS
         pos_start = self.pos.copy()
@@ -261,7 +269,7 @@ class Lexer():
             tok_type = TT_EE
 
         return Token(tok_type, pos_start=pos_start, pos_end=self.pos)
-    
+
     def make_less_than(self):
         tok_type = TT_LT
         pos_start = self.pos.copy()
@@ -283,7 +291,7 @@ class Lexer():
             tok_type = TT_GTE
 
         return Token(tok_type, pos_start=pos_start, pos_end=self.pos)
-    
+
     def skip_comment(self):
         self.advance()
 
