@@ -17,4 +17,6 @@ class Context:
         else:
             self.async_group_stack = []
 
+        self.defer_scopes = []
+
         self.in_async_function = False

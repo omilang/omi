@@ -20,6 +20,17 @@ USE_DIRECTIVE_PATTERN = re.compile(
 LEVEL_VALUES = {"error", "warning", "style", "security"}
 
 
+def _extract_no_colors(args):
+    filtered = []
+    disabled = False
+    for arg in args:
+        if arg == "--nocolors":
+            disabled = True
+            continue
+        filtered.append(arg)
+    return filtered, disabled
+
+
 def _strip_wrapping_quotes(value):
     if value is None:
         return None
@@ -205,6 +216,10 @@ def parse_lint_flags(args):
 
 def main(argv=None):
     args = argv if argv is not None else sys.argv[1:]
+    args, no_colors_requested = _extract_no_colors(args)
+    if no_colors_requested:
+        flags.no_colors = True
+
     debug = ("--debug" in args) or ("-d" in args)
 
     if ("--version" in args) or ("-v" in args):
@@ -225,6 +240,9 @@ def main(argv=None):
             return 1
 
         run_flags = cli_tokens[2:]
+        run_flags, run_no_colors = _extract_no_colors(run_flags)
+        if run_no_colors:
+            flags.no_colors = True
         run_lint = False
         lint_flag_tokens = []
         for token in run_flags:
@@ -265,6 +283,9 @@ def main(argv=None):
     if len(cli_tokens) >= 2 and cli_tokens[0] == "test":
         target = cli_tokens[1]
         test_flag_tokens = cli_tokens[2:]
+        test_flag_tokens, test_no_colors = _extract_no_colors(test_flag_tokens)
+        if test_no_colors:
+            flags.no_colors = True
 
         failfast, json_output, save_path, unknown_flags = parse_test_flags(test_flag_tokens)
 
@@ -302,7 +323,10 @@ def main(argv=None):
 
     if len(cli_tokens) >= 2 and cli_tokens[0] == "lint":
         target = cli_tokens[1]
-        lint_options, unknown_flags = parse_lint_flags(cli_tokens[2:])
+        lint_flag_tokens, lint_no_colors = _extract_no_colors(cli_tokens[2:])
+        if lint_no_colors:
+            flags.no_colors = True
+        lint_options, unknown_flags = parse_lint_flags(lint_flag_tokens)
 
         if unknown_flags:
             print(f"Unknown lint flag(s): {' '.join(unknown_flags)}")

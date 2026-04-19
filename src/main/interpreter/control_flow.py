@@ -10,6 +10,20 @@ from src.values.types.string import String
 
 
 class InterpreterControlFlowMixin:
+    def _visit_loop_body(self, body_node, context):
+        if not isinstance(body_node, BlockNode):
+            return self.visit(body_node, context)
+
+        res = RTResult()
+        elements = []
+
+        for statement in body_node.element_nodes:
+            elements.append(res.register(self.visit(statement, context)))
+            if res.should_return():
+                return res
+
+        return res.success(List(elements).set_context(context).set_pos(body_node.pos_start, body_node.pos_end))
+
     def visit_IfNode(self, node, context):
         res = RTResult()
 
@@ -36,27 +50,28 @@ class InterpreterControlFlowMixin:
     def visit_ForNode(self, node, context):
         res = RTResult()
         elements = []
+        self._push_defer_scope(context)
         if node.start_value_node is None:
             iterable = res.register(self.visit(node.end_value_node, context))
             if res.should_return():
-                return res
+                return self._finalize_scope_result(context, res)
 
             from src.values.types.list import List as ListValue
 
             if not isinstance(iterable, ListValue):
-                return res.failure(RTError(
+                return self._finalize_scope_result(context, res.failure(RTError(
                     node.pos_start,
                     node.pos_end,
                     "Can only iterate over lists",
                     context,
-                ))
+                )))
 
             for elem in iterable.elements:
                 context.symbol_table.set(node.var_name_tok.value, elem.copy().set_context(context))
 
-                value = res.register(self.visit(node.body_node, context))
+                value = res.register(self._visit_loop_body(node.body_node, context))
                 if res.should_return() and res.loop_should_continue is False and res.loop_should_break is False:
-                    return res
+                    return self._finalize_scope_result(context, res)
 
                 if res.loop_should_continue:
                     continue
@@ -66,22 +81,23 @@ class InterpreterControlFlowMixin:
 
                 elements.append(value)
 
-            return res.success(
+            success_res = res.success(
                 Number.null if node.should_return_null else List(elements).set_context(context).set_pos(node.pos_start, node.pos_end)
             )
+            return self._finalize_scope_result(context, success_res)
 
         start_value = res.register(self.visit(node.start_value_node, context))
         if res.should_return():
-            return res
+            return self._finalize_scope_result(context, res)
 
         end_value = res.register(self.visit(node.end_value_node, context))
         if res.should_return():
-            return res
+            return self._finalize_scope_result(context, res)
 
         if node.step_value_node:
             step_value = res.register(self.visit(node.step_value_node, context))
             if res.should_return():
-                return res
+                return self._finalize_scope_result(context, res)
         else:
             step_value = Number(1)
 
@@ -96,9 +112,9 @@ class InterpreterControlFlowMixin:
             context.symbol_table.set(node.var_name_tok.value, Number(i))
             i += step_value.value
 
-            value = res.register(self.visit(node.body_node, context))
+            value = res.register(self._visit_loop_body(node.body_node, context))
             if res.should_return() and res.loop_should_continue is False and res.loop_should_break is False:
-                return res
+                return self._finalize_scope_result(context, res)
 
             if res.loop_should_continue:
                 continue
@@ -108,25 +124,27 @@ class InterpreterControlFlowMixin:
 
             elements.append(value)
 
-        return res.success(
+        success_res = res.success(
             Number.null if node.should_return_null else List(elements).set_context(context).set_pos(node.pos_start, node.pos_end)
         )
+        return self._finalize_scope_result(context, success_res)
 
     def visit_WhileNode(self, node, context):
         res = RTResult()
         elements = []
+        self._push_defer_scope(context)
 
         while True:
             condition = res.register(self.visit(node.condition_node, context))
             if res.should_return():
-                return res
+                return self._finalize_scope_result(context, res)
 
             if not condition.is_true():
                 break
 
-            value = res.register(self.visit(node.body_node, context))
+            value = res.register(self._visit_loop_body(node.body_node, context))
             if res.should_return() and res.loop_should_continue is False and res.loop_should_break is False:
-                return res
+                return self._finalize_scope_result(context, res)
 
             if res.loop_should_continue:
                 continue
@@ -136,9 +154,14 @@ class InterpreterControlFlowMixin:
 
             elements.append(value)
 
-        return res.success(
+        success_res = res.success(
             Number.null if node.should_return_null else List(elements).set_context(context).set_pos(node.pos_start, node.pos_end)
         )
+        return self._finalize_scope_result(context, success_res)
+
+    def visit_DeferNode(self, node, context):
+        self._register_defer_expr(context, node.expr_node)
+        return RTResult().success(Number.null)
 
     def visit_ReturnNode(self, node, context):
         res = RTResult()
@@ -242,13 +265,15 @@ class InterpreterControlFlowMixin:
     def _execute_block_last(self, block_node, context):
         res = RTResult()
         last_value = Number.null
+        self._push_defer_scope(context)
 
         for statement in block_node.element_nodes:
             last_value = res.register(self.visit(statement, context))
             if res.should_return():
-                return res
+                return self._finalize_scope_result(context, res)
 
-        return res.success(last_value)
+        success_res = res.success(last_value)
+        return self._finalize_scope_result(context, success_res)
 
     def visit_TryNode(self, node, context):
         res = RTResult()

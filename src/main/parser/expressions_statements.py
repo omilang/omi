@@ -2,6 +2,7 @@ from src.error.message.invalidsyntax import InvalidSyntaxError
 from src.main.parser.helpers import sub_parse_expr
 from src.main.parser.result import ParseResult
 from src.nodes.block import BlockNode
+from src.nodes.control.flow import DeferNode
 from src.nodes.directives.setN import SetDirectiveNode
 from src.nodes.directives.typealiasN import TypeAliasNode
 from src.nodes.directives.useN import UseDirectiveNode
@@ -930,6 +931,20 @@ class ParserExpressionsStatementsMixin:
             if res.error:
                 return res
             return res.success(match_node)
+
+        if self.current_tok.matches(TT_KEYWORD, "defer"):
+            res.register_advancement()
+            self.advance()
+
+            deferred_expr = res.register(self.expr())
+            if res.error:
+                return res
+
+            return res.success(DeferNode(
+                deferred_expr,
+                pos_start,
+                deferred_expr.pos_end,
+            ))
 
         if self.current_tok.matches(TT_KEYWORD, "continue"):
             res.register_advancement()

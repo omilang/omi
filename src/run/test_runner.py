@@ -14,6 +14,7 @@ from src.run.run import global_symbol_table
 from src.run.source import read_source_file
 from src.var.keyword import TEST_FILE_EXTENSION
 import src.var.flags as runtime_flags
+import src.var.ansi as ansi
 
 
 class TestReporter:
@@ -64,23 +65,14 @@ class TestReporter:
 
 
 class _Colors:
-    RESET = "\033[0m"
-    GREEN = "\033[32m"
-    RED = "\033[31m"
-    YELLOW = "\033[33m"
-    CYAN = "\033[36m"
-
-
-def _supports_color():
-    if os.environ.get("NO_COLOR"):
-        return False
-    return hasattr(os.sys.stdout, "isatty") and os.sys.stdout.isatty()
+    GREEN = "green"
+    RED = "red"
+    YELLOW = "yellow"
+    CYAN = "cyan"
 
 
 def _color(text, ansi_color):
-    if not _supports_color():
-        return text
-    return f"{ansi_color}{text}{_Colors.RESET}"
+    return ansi.wrap(text, ansi_color)
 
 
 def _format_runtime_error(error):

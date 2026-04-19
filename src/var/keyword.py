@@ -18,6 +18,7 @@ KEYWORDS = [
     "step",
     "while",
     "async",
+    "defer",
     "func",
     "end",
     "return",
@@ -74,5 +75,6 @@ TYPE_LABELS = {
     'stdlibfunction': 'built-in function',
     'module': 'module',
     'futurevalue': 'future',
+    'filehandlevalue': 'file_handle',
     'pythonlibvalue': 'py.lib',
 }

@@ -1,4 +1,5 @@
 from src.arrow import arrow
+import src.var.ansi as ansi
 
 
 class Error:
@@ -25,11 +26,11 @@ class Error:
         return frame or None
 
     def as_string(self):
-        lines = [f"{self.error_name}: {self.details}"]
+        lines = [ansi.wrap(f"{self.error_name}: {self.details}", "bold", "red")]
 
         location = self._format_location()
         if location:
-            lines.append(location)
+            lines.append(ansi.wrap(location, "cyan"))
 
         frame = self._format_frame()
         if frame:

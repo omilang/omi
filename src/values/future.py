@@ -10,70 +10,75 @@ class OmiAsyncTaskError(Exception):
         self.rt_error = rt_error
 
 
+class _FutureState:
+    def __init__(self):
+        self.task = None
+        self.callback = None
+        self.result = None
+        self.error = None
+        self.done = False
+        self.cancelled = False
+
+
 class FutureValue(Value):
     def __init__(self, result_type_annotation=None):
         super().__init__()
         self.result_type_annotation = result_type_annotation
-        self._task = None
-        self._callback = None
-        self._result = None
-        self._error = None
-        self._done = False
-        self._cancelled = False
+        self._state = _FutureState()
 
     def schedule(self, loop, coro):
-        self._task = loop.create_task(coro)
+        self._state.task = loop.create_task(coro)
         return self
 
     def schedule_deferred(self, callback):
-        self._callback = callback
+        self._state.callback = callback
         return self
 
     def schedule_callable(self, loop, callback):
         async def _runner():
             return callback()
 
-        self._task = loop.create_task(_runner())
+        self._state.task = loop.create_task(_runner())
         return self
 
     def is_done(self):
-        if self._cancelled:
+        if self._state.cancelled:
             return True
-        if self._task is not None:
-            return self._task.done()
-        return self._done
+        if self._state.task is not None:
+            return self._state.task.done()
+        return self._state.done
 
     def cancel(self):
-        self._cancelled = True
-        if self._task is not None and not self._task.done():
-            self._task.cancel()
+        self._state.cancelled = True
+        if self._state.task is not None and not self._state.task.done():
+            self._state.task.cancel()
         return self
 
     def run_deferred(self, context, pos_start, pos_end):
-        if self._done or self._cancelled:
+        if self._state.done or self._state.cancelled:
             return
-        if self._callback is None:
+        if self._state.callback is None:
             return
         try:
-            self._result = self._callback()
-            self._done = True
+            self._state.result = self._state.callback()
+            self._state.done = True
         except Exception as exc:
-            self._error = self._to_runtime_error(exc, context, pos_start, pos_end)
-            self._done = True
+            self._state.error = self._to_runtime_error(exc, context, pos_start, pos_end)
+            self._state.done = True
 
     def result(self):
-        if self._cancelled:
+        if self._state.cancelled:
             return None
-        if self._task is None:
-            if not self._done or self._error is not None:
+        if self._state.task is None:
+            if not self._state.done or self._state.error is not None:
                 return None
-            return self._result
+            return self._state.result
 
         if not self.is_done():
             return None
-        if self._task.cancelled() or self._task.exception() is not None:
+        if self._state.task.cancelled() or self._state.task.exception() is not None:
             return None
-        return self._task.result()
+        return self._state.task.result()
 
     def _to_runtime_error(self, exc, context, pos_start, pos_end):
         if isinstance(exc, OmiAsyncTaskError):
@@ -88,33 +93,33 @@ class FutureValue(Value):
         )
 
     def get_error(self, context, pos_start=None, pos_end=None):
-        if self._cancelled:
+        if self._state.cancelled:
             return None
-        if self._task is None:
-            return self._error
+        if self._state.task is None:
+            return self._state.error
 
-        if self._task is None or not self._task.done():
+        if self._state.task is None or not self._state.task.done():
             return None
-        if self._task.cancelled():
+        if self._state.task.cancelled():
             return None
-        exc = self._task.exception()
+        exc = self._state.task.exception()
         if exc is None:
             return None
         return self._to_runtime_error(exc, context, pos_start, pos_end)
 
     def await_value(self, loop, context, pos_start, pos_end):
-        if self._cancelled:
+        if self._state.cancelled:
             return None, RTError(pos_start, pos_end, "Async task was cancelled", context)
-        if self._task is None:
-            if not self._done:
+        if self._state.task is None:
+            if not self._state.done:
                 self.run_deferred(context, pos_start, pos_end)
-            if self._error is not None:
-                return None, self._error
-            if not self._done:
+            if self._state.error is not None:
+                return None, self._state.error
+            if not self._state.done:
                 return None, RTError(pos_start, pos_end, "Future is not scheduled", context)
-            return self._result, None
+            return self._state.result, None
 
-        if not self._task.done():
+        if not self._state.task.done():
             try:
                 if loop.is_running():
                     return None, RTError(
@@ -123,7 +128,7 @@ class FutureValue(Value):
                         "Cannot block on await while event loop is running",
                         context,
                     )
-                loop.run_until_complete(asyncio.shield(self._task))
+                loop.run_until_complete(asyncio.shield(self._state.task))
             except asyncio.CancelledError:
                 return None, RTError(pos_start, pos_end, "Async task was cancelled", context)
             except Exception as exc:
@@ -133,16 +138,11 @@ class FutureValue(Value):
         if err is not None:
             return None, err
 
-        return self._task.result(), None
+        return self._state.task.result(), None
 
     def copy(self):
         copy = FutureValue(self.result_type_annotation)
-        copy._task = self._task
-        copy._callback = self._callback
-        copy._result = self._result
-        copy._error = self._error
-        copy._done = self._done
-        copy._cancelled = self._cancelled
+        copy._state = self._state
         copy.set_context(self.context)
         copy.set_pos(self.pos_start, self.pos_end)
         return copy

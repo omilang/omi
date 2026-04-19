@@ -6,6 +6,7 @@ from src.values.types.string import String
 from src.values.types.list import List
 from src.values.types.boolean import Boolean
 from src.values.types.module import Module
+from src.values.types.filehandle import FileHandleValue, _FileHandleState
 from src.values.function.stdlib import StdlibFunction
 from src.run.runtime import RTResult
 from src.run.context import Context
@@ -196,11 +197,146 @@ class FilesBuiltInFunction(StdlibFunction):
         return RTResult().success(Number.null)
     execute_mv.arg_names = ["src", "dst"]
 
+    def execute_open(self, exec_ctx):
+        path = exec_ctx.symbol_table.get("path")
+        mode = exec_ctx.symbol_table.get("mode")
+
+        if not isinstance(path, String):
+            return RTResult().failure(RTError(
+                self.pos_start, self.pos_end,
+                "First argument must be a string",
+                exec_ctx
+            ))
+
+        if not isinstance(mode, String):
+            return RTResult().failure(RTError(
+                self.pos_start, self.pos_end,
+                "Second argument must be a string",
+                exec_ctx
+            ))
+
+        try:
+            py_file = open(path.value, mode.value, encoding=None if "b" in mode.value else "utf-8")
+        except Exception as e:
+            return RTResult().failure(RTError(
+                self.pos_start, self.pos_end,
+                f"Failed to open file: {e}",
+                exec_ctx
+            ))
+
+        handle = FileHandleValue(_FileHandleState(py_file, path.value, mode.value))
+        handle.set_context(exec_ctx).set_pos(self.pos_start, self.pos_end)
+        return RTResult().success(handle)
+    execute_open.arg_names = ["path"]
+    execute_open.opt_names = ["mode"]
+    execute_open.opt_defaults_factory = lambda: [String("r")]
+
+    def execute_close(self, exec_ctx):
+        handle = exec_ctx.symbol_table.get("handle")
+
+        if not isinstance(handle, FileHandleValue):
+            return RTResult().failure(RTError(
+                self.pos_start, self.pos_end,
+                "Argument must be a file_handle",
+                exec_ctx
+            ))
+
+        try:
+            handle.close()
+        except Exception as e:
+            return RTResult().failure(RTError(
+                self.pos_start, self.pos_end,
+                f"Failed to close file: {e}",
+                exec_ctx
+            ))
+
+        return RTResult().success(Number.null)
+    execute_close.arg_names = ["handle"]
+
+    def execute_read(self, exec_ctx):
+        handle = exec_ctx.symbol_table.get("handle")
+        count = exec_ctx.symbol_table.get("count")
+
+        if not isinstance(handle, FileHandleValue):
+            return RTResult().failure(RTError(
+                self.pos_start, self.pos_end,
+                "First argument must be a file_handle",
+                exec_ctx
+            ))
+
+        if handle.closed:
+            return RTResult().failure(RTError(
+                self.pos_start, self.pos_end,
+                "File handle is closed",
+                exec_ctx
+            ))
+
+        if not isinstance(count, Number):
+            return RTResult().failure(RTError(
+                self.pos_start, self.pos_end,
+                "Second argument must be a number",
+                exec_ctx
+            ))
+
+        try:
+            data = handle.read(int(count.value))
+        except Exception as e:
+            return RTResult().failure(RTError(
+                self.pos_start, self.pos_end,
+                f"Failed to read from file: {e}",
+                exec_ctx
+            ))
+
+        if isinstance(data, bytes):
+            data = data.decode("utf-8", errors="replace")
+
+        return RTResult().success(String(data))
+    execute_read.arg_names = ["handle"]
+    execute_read.opt_names = ["count"]
+    execute_read.opt_defaults_factory = lambda: [Number(-1)]
+
+    def execute_write(self, exec_ctx):
+        handle = exec_ctx.symbol_table.get("handle")
+        data = exec_ctx.symbol_table.get("data")
+
+        if not isinstance(handle, FileHandleValue):
+            return RTResult().failure(RTError(
+                self.pos_start, self.pos_end,
+                "First argument must be a file_handle",
+                exec_ctx
+            ))
+
+        if handle.closed:
+            return RTResult().failure(RTError(
+                self.pos_start, self.pos_end,
+                "File handle is closed",
+                exec_ctx
+            ))
+
+        if not isinstance(data, String):
+            return RTResult().failure(RTError(
+                self.pos_start, self.pos_end,
+                "Second argument must be a string",
+                exec_ctx
+            ))
+
+        try:
+            written = handle.write(data.value)
+        except Exception as e:
+            return RTResult().failure(RTError(
+                self.pos_start, self.pos_end,
+                f"Failed to write file: {e}",
+                exec_ctx
+            ))
+
+        return RTResult().success(Number(written))
+    execute_write.arg_names = ["handle", "data"]
+
 
 def create_files_module():
     symbol_table = SymbolTable()
 
-    funcs = ["cwd", "mkdir", "rm", "rmdir", "list", "cp", "mv"]
+    funcs = ["cwd", "mkdir", "rm", "rmdir", "list", "cp", "mv", "open", "close", "read", "write"]
     for name in funcs:
         symbol_table.set(name, FilesBuiltInFunction(name))
 

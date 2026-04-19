@@ -10,6 +10,7 @@ def _build_type_map():
     from src.values.types.boolean import Boolean
     from src.values.types.null import Null
     from src.values.types.void import Void
+    from src.values.types.filehandle import FileHandleValue
     from src.values.types.pythonlib import PythonLibValue
     from src.values.function.base import BaseFunction
     from src.values.future import FutureValue
@@ -25,6 +26,7 @@ def _build_type_map():
         "bool":   lambda v: isinstance(v, Boolean),
         "func":   lambda v: isinstance(v, BaseFunction),
         "call":   lambda v: isinstance(v, BaseFunction),
+        "file_handle": lambda v: isinstance(v, FileHandleValue),
         "pylib":  lambda v: isinstance(v, PythonLibValue),
         "future": lambda v: isinstance(v, FutureValue),
         "httpresponse": lambda v: isinstance(v, HTTPResponse),
@@ -309,6 +311,7 @@ def _type_name(value):
     from src.values.types.boolean import Boolean
     from src.values.types.null import Null
     from src.values.types.void import Void
+    from src.values.types.filehandle import FileHandleValue
     from src.values.types.pythonlib import PythonLibValue
     from src.values.function.base import BaseFunction
     from src.values.future import FutureValue
@@ -331,6 +334,8 @@ def _type_name(value):
         return "dict"
     if isinstance(value, BaseFunction):
         return "call"
+    if isinstance(value, FileHandleValue):
+        return "file_handle"
     if isinstance(value, PythonLibValue):
         return "pylib"
     if isinstance(value, FutureValue):

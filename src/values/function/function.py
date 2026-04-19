@@ -178,8 +178,11 @@ class Function(BaseFunction):
 					if err:
 						return res.failure(err)
 
+		interpreter._push_defer_scope(exec_ctx)
+
 		value = res.register(interpreter.visit(self.body_node, exec_ctx))
-		if res.should_return() and res.func_return_value == None: return res
+		if res.should_return() and res.func_return_value == None:
+			return interpreter._finalize_scope_result(exec_ctx, res)
 
 		ret_value = (value if self.should_auto_return else None) or res.func_return_value or Void.void
 
@@ -209,9 +212,9 @@ class Function(BaseFunction):
 					err = check_type(ret_value, resolved_return_type, exec_ctx,
 					                 self.pos_start, self.pos_end)
 					if err:
-						return res.failure(err)
+						return interpreter._finalize_scope_result(exec_ctx, res.failure(err))
 
-		return res.success(ret_value)
+		return interpreter._finalize_scope_result(exec_ctx, res.success(ret_value))
 
 	async def execute_async(self, args, kwargs=None):
 		res = self.execute(args, kwargs)

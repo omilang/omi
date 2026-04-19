@@ -1,5 +1,6 @@
 from src.error.error import Error
 from src.arrow import arrow
+import src.var.ansi as ansi
 
 
 class RTError(Error):
@@ -11,8 +12,13 @@ class RTError(Error):
         self.trace = self.generate_traceback()
 
     def as_string(self):
-        lines = list(self.trace)
-        lines.append(f"{self.error_name}: {self.details}")
+        lines = []
+        for idx, line in enumerate(self.trace):
+            if idx == 0:
+                lines.append(ansi.wrap(line, "bold", "yellow"))
+            else:
+                lines.append(ansi.wrap(line, "dim"))
+        lines.append(ansi.wrap(f"{self.error_name}: {self.details}", "bold", "red"))
 
         frame = self._format_frame()
         if frame:
