@@ -1,13 +1,11 @@
 CONCRETE_TYPE_NAMES = {
     "int",
     "float",
-    "number",
     "string",
     "bool",
     "array",
     "dict",
     "call",
-    "file_handle",
     "pylib",
     "void",
     "null",

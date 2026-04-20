@@ -12,6 +12,7 @@ from src.run.runtime import RTResult
 from src.run.context import Context
 from src.main.symboltable import SymbolTable
 from src.error.message.rt import RTError
+from src.nodes.types.typeannotation import TypeAnnotationNode
 
 
 class FilesBuiltInFunction(StdlibFunction):
@@ -333,8 +334,13 @@ class FilesBuiltInFunction(StdlibFunction):
     execute_write.arg_names = ["handle", "data"]
 
 
+def _handle_type_annotation():
+    return TypeAnnotationNode(["file_handle"], None, None)
+
+
 def create_files_module():
     symbol_table = SymbolTable()
+    symbol_table.set("__type_handle__", _handle_type_annotation())
 
     funcs = ["cwd", "mkdir", "rm", "rmdir", "list", "cp", "mv", "open", "close", "read", "write"]
     for name in funcs:
