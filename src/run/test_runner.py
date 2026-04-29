@@ -86,6 +86,12 @@ def _format_runtime_error(error):
     return str(error)
 
 
+def _format_duration(duration):
+    if duration > 0 and duration < 0.0005:
+        return "0.001s"
+    return f"{duration:.3f}s"
+
+
 def _discover_test_files(path):
     if os.path.isfile(path):
         if not path.lower().endswith(TEST_FILE_EXTENSION):
@@ -207,7 +213,7 @@ def _print_report(file_result):
         if event_type == "test":
             _, depth, record = event
             indent = "  " * (depth + 1)
-            duration = f"{record['duration']:.3f}s"
+            duration = _format_duration(record['duration'])
             if record["status"] == "passed":
                 marker = _color("[PASS]", _Colors.GREEN)
             elif record["status"] == "failed":
@@ -353,7 +359,7 @@ def run_tests(path, failfast=False, json_output=False, save_path=None):
 
     summary = (
         f"Summary: {total_passed} passed, {total_failed} failed, "
-        f"{total_skipped} skipped ({total_duration:.3f}s total)"
+        f"{total_skipped} skipped ({_format_duration(total_duration)} total)"
     )
 
     payload = {
