@@ -22,7 +22,7 @@ classifiers = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/OmiLang/Omi"
+Homepage = "https://omilang.fun"
 Repository = "https://github.com/OmiLang/Omi"
 Documentation = "https://github.com/OmiLang/docs"
 
