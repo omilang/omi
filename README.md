@@ -27,7 +27,6 @@
 
 ```bash
 pip install omilang
-omi
 ```
 
 ### Install from source
@@ -36,7 +35,13 @@ omi
 git clone https://github.com/OmiLang/Omi.git
 cd Omi
 pip install -e .
+```
+
+Launch interactive console:
+
+```
 omi
+OmiShell >>>
 ```
 
 Run a file:
