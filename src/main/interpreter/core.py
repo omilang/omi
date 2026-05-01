@@ -25,6 +25,39 @@ from src.var.token import (
 
 
 class InterpreterCoreMixin:
+    def _push_defer_scope(self, context):
+        if not hasattr(context, "defer_scopes"):
+            context.defer_scopes = []
+        context.defer_scopes.append([])
+
+    def _register_defer_expr(self, context, expr_node):
+        if not hasattr(context, "defer_scopes"):
+            context.defer_scopes = []
+        if len(context.defer_scopes) == 0:
+            context.defer_scopes.append([])
+        context.defer_scopes[-1].append(expr_node)
+
+    def _run_defer_scope(self, context):
+        if not hasattr(context, "defer_scopes") or len(context.defer_scopes) == 0:
+            return RTResult().success(Number.null)
+
+        deferred_nodes = context.defer_scopes.pop()
+
+        for deferred_node in reversed(deferred_nodes):
+            deferred_res = self.visit(deferred_node, context)
+            if deferred_res.signal == "exception" and deferred_res.exception_data is not None:
+                return RTResult().register_exception(deferred_res.exception_data)
+            if deferred_res.error:
+                return RTResult().failure(deferred_res.error)
+
+        return RTResult().success(Number.null)
+
+    def _finalize_scope_result(self, context, body_result):
+        cleanup_result = self._run_defer_scope(context)
+        if cleanup_result.should_return():
+            return cleanup_result
+        return body_result
+
     def visit(self, node, context):
         method_name = f"visit_{type(node).__name__}"
         method = getattr(self, method_name, self.no_visit_method)
@@ -65,15 +98,17 @@ class InterpreterCoreMixin:
     def visit_BlockNode(self, node, context):
         res = RTResult()
         elements = []
+        self._push_defer_scope(context)
 
         for element_node in node.element_nodes:
             elements.append(res.register(self.visit(element_node, context)))
             if res.should_return():
-                return res
+                return self._finalize_scope_result(context, res)
 
-        return res.success(
+        success_res = res.success(
             List(elements).set_context(context).set_pos(node.pos_start, node.pos_end)
         )
+        return self._finalize_scope_result(context, success_res)
 
     def visit_DictNode(self, node, context):
         res = RTResult()

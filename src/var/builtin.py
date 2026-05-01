@@ -9,6 +9,7 @@ from src.stdlib.txt import create_txt_module
 from src.stdlib.string import create_string_module
 from src.stdlib.regex import create_regex_module
 from src.stdlib.log import create_log_module
+from src.stdlib.color import create_color_module
 from src.stdlib.python import create_python_module
 
 BUILTIN_MODULES = {
@@ -23,5 +24,6 @@ BUILTIN_MODULES = {
     "omi:string": create_string_module,
     "omi:regex":  create_regex_module,
     "omi:log":    create_log_module,
+    "omi:color":  create_color_module,
     "omi:python": create_python_module,
 }

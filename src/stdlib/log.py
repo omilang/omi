@@ -20,6 +20,21 @@ from src.var.constant import (
     DEFAULT_MAX_SIZE,
     DEFAULT_BACKUP_COUNT,
 )
+import src.var.ansi as ansi
+
+
+class _ColorLevelFormatter(_logging.Formatter):
+    LEVEL_TO_STYLE = {
+        "DEBUG": ("blue",),
+        "INFO": ("green",),
+        "WARNING": ("yellow",),
+        "ERROR": ("red",),
+        "CRITICAL": ("red", "bold"),
+    }
+
+    def format(self, record):
+        colored_level = ansi.wrap(record.levelname, *self.LEVEL_TO_STYLE.get(record.levelname, ()))
+        return f"{colored_level}: {record.getMessage()}"
 
 class _LogState:
     def __init__(self):
@@ -40,7 +55,7 @@ class _LogState:
         if self.stream_handler is not None:
             return
         handler = _logging.StreamHandler(_sys.stdout)
-        handler.setFormatter(_logging.Formatter("%(levelname)s: %(message)s"))
+        handler.setFormatter(_ColorLevelFormatter())
         self.logger.addHandler(handler)
         self.stream_handler = handler
 

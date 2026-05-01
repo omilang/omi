@@ -3,13 +3,14 @@ from src.error.message.rt import RTError
 
 
 def _build_type_map():
-    from src.values.types.number import Number, Int, Float
+    from src.values.types.number import Int, Float
     from src.values.types.string import String
     from src.values.types.list import List
     from src.values.types.dict import Dict
     from src.values.types.boolean import Boolean
     from src.values.types.null import Null
     from src.values.types.void import Void
+    from src.values.types.filehandle import FileHandleValue
     from src.values.types.pythonlib import PythonLibValue
     from src.values.function.base import BaseFunction
     from src.values.future import FutureValue
@@ -18,7 +19,6 @@ def _build_type_map():
     return {
         "int":    lambda v: isinstance(v, Int),
         "float":  lambda v: isinstance(v, Float),
-        "number": lambda v: isinstance(v, Number),
         "string": lambda v: isinstance(v, String),
         "array":  lambda v: isinstance(v, List),
         "dict":   lambda v: isinstance(v, Dict),
@@ -28,6 +28,7 @@ def _build_type_map():
         "pylib":  lambda v: isinstance(v, PythonLibValue),
         "future": lambda v: isinstance(v, FutureValue),
         "httpresponse": lambda v: isinstance(v, HTTPResponse),
+        "file_handle": lambda v: isinstance(v, FileHandleValue),
         "null":   lambda v: isinstance(v, Null),
         "void":   lambda v: isinstance(v, Void),
         "every":  lambda v: True,
@@ -309,6 +310,7 @@ def _type_name(value):
     from src.values.types.boolean import Boolean
     from src.values.types.null import Null
     from src.values.types.void import Void
+    from src.values.types.filehandle import FileHandleValue
     from src.values.types.pythonlib import PythonLibValue
     from src.values.function.base import BaseFunction
     from src.values.future import FutureValue
@@ -331,6 +333,8 @@ def _type_name(value):
         return "dict"
     if isinstance(value, BaseFunction):
         return "call"
+    if isinstance(value, FileHandleValue):
+        return "file_handle"
     if isinstance(value, PythonLibValue):
         return "pylib"
     if isinstance(value, FutureValue):

@@ -21,6 +21,10 @@ def _lib_type_annotation():
     return TypeAnnotationNode(["pylib"], None, None)
 
 
+def _number_type_annotation():
+    return TypeAnnotationNode(["int", "float"], None, None)
+
+
 def _python_to_omi_bridge(value):
     if isinstance(value, bool):
         return Boolean.true if value else Boolean.false
@@ -241,6 +245,7 @@ class PythonBuiltInFunction(StdlibFunction):
 def create_python_module():
     symbol_table = SymbolTable()
     symbol_table.set("__type_lib__", _lib_type_annotation())
+    symbol_table.set("__type_number__", _number_type_annotation())
 
     for name in ("import", "call", "eval"):
         symbol_table.set(name, PythonBuiltInFunction(name))

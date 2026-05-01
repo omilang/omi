@@ -1,6 +1,7 @@
 import os
 import src.run.run as run
 import src.var.flags as flags
+import src.var.ansi as ansi
 from src.values.types.number import Number
 from src.values.types.string import String
 from src.values.types.list import List
@@ -83,6 +84,8 @@ class BuiltInFunction(BaseFunction):
     if flags.noecho:
       return
     text = sep.join(str(value) for value in values)
+    if flags.no_colors:
+      text = ansi.strip_ansi(text)
     print(text, end=end)
     flags.repl_output_emitted = True
     flags.repl_output_ended_with_newline = str(end).endswith("\n")

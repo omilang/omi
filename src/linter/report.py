@@ -1,32 +1,22 @@
 import json
-import os
-import sys
 from dataclasses import dataclass
 from typing import Dict, List
 
 from src.arrow import arrow
 from src.linter.rule import LintLevel
+import src.var.ansi as ansi
 
 
 class _Colors:
-    RESET = "\033[0m"
-    GREEN = "\033[32m"
-    RED = "\033[31m"
-    YELLOW = "\033[33m"
-    MAGENTA = "\033[35m"
-    CYAN = "\033[36m"
-
-
-def _supports_color():
-    if os.environ.get("NO_COLOR"):
-        return False
-    return hasattr(sys.stdout, "isatty") and sys.stdout.isatty()
+    GREEN = "green"
+    RED = "red"
+    YELLOW = "yellow"
+    MAGENTA = "magenta"
+    CYAN = "cyan"
 
 
 def _color(text, ansi_color):
-    if not _supports_color():
-        return text
-    return f"{ansi_color}{text}{_Colors.RESET}"
+    return ansi.wrap(text, ansi_color)
 
 
 @dataclass

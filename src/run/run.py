@@ -64,6 +64,7 @@ global_symbol_table.set("input", BuiltInFunction.input)
 global_symbol_table.set("clear", BuiltInFunction.clear)
 global_symbol_table.set("cls", BuiltInFunction.clear)
 global_symbol_table.set("is_num", BuiltInFunction.is_number)
+global_symbol_table.set("is_number", BuiltInFunction.is_number)
 global_symbol_table.set("is_int", BuiltInFunction.is_int)
 global_symbol_table.set("is_float", BuiltInFunction.is_float)
 global_symbol_table.set("is_bool", BuiltInFunction.is_bool)
@@ -88,11 +89,13 @@ global_symbol_table.set("cancel", BuiltInFunction.cancel)
 
 def run(fn, text, preserve_flags=False, lint_options=None):
     if not preserve_flags:
+        keep_no_colors = flags.no_colors
         flags.debug = False
         flags.noecho = False
         flags.eval_enabled = False
         flags.notypes = False
         flags.noasync = False
+        flags.no_colors = keep_no_colors
         flags.use_json = False
         flags.use_fix = False
         flags.use_failfast = False
