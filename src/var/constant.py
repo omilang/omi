@@ -11,7 +11,7 @@ SOURCE_FILE_ENCODINGS = (
     "cp1251",
 )
 
-VERSION = "1.5.1"
+VERSION = "1.6.0"
 
 HELP_TEXT = f"""\
 Omi {VERSION}
@@ -29,6 +29,8 @@ FLAGS
   --help    | -h   Show this help message and exit
   --debug   | -d   Print the parsed AST result after execution
   --nocolors       Disable ANSI colors in all output (errors, lint, tests, logs)
+  run
+  --nolint         Disable lint before execution
   lint
   --fix            Apply auto-fixes when possible
   --json           Print lint report as JSON

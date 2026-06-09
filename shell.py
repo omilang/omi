@@ -108,6 +108,10 @@ def apply_use_directives_to_lint_options(source, file_path, lint_options):
     return merged
 
 
+def uses_nolint(source):
+    return any(directive["name"] == "nolint" for directive in collect_use_directives(source))
+
+
 def apply_use_directives_to_test_flags(source, file_path, failfast, json_output, save_path):
     merged_failfast = failfast
     merged_json = json_output
@@ -243,11 +247,13 @@ def main(argv=None):
         run_flags, run_no_colors = _extract_no_colors(run_flags)
         if run_no_colors:
             flags.no_colors = True
-        run_lint = False
+        run_nolint = False
         lint_flag_tokens = []
         for token in run_flags:
             if token == "--lint":
-                run_lint = True
+                continue
+            if token == "--nolint":
+                run_nolint = True
             else:
                 lint_flag_tokens.append(token)
 
@@ -261,6 +267,8 @@ def main(argv=None):
         except Exception as e:
             print(f"Failed to load script \"{fn}\"\n{e}")
             return 1
+
+        run_lint = not run_nolint and not uses_nolint(script)
 
         if run_lint:
             try:
@@ -383,7 +391,36 @@ def main(argv=None):
                 continue
 
             if text.strip().startswith("run "):
-                fn = text.strip()[4:].strip()
+                try:
+                    command_tokens = shlex.split(text.strip())
+                except ValueError as e:
+                    print(f"Invalid run command: {e}")
+                    continue
+
+                if len(command_tokens) < 2:
+                    print("Usage: run <file.omi> [flags]")
+                    continue
+
+                fn = command_tokens[1]
+                run_flags, run_no_colors = _extract_no_colors(command_tokens[2:])
+                if run_no_colors:
+                    flags.no_colors = True
+
+                run_nolint = False
+                lint_flag_tokens = []
+                for token in run_flags:
+                    if token == "--lint":
+                        continue
+                    if token == "--nolint":
+                        run_nolint = True
+                    else:
+                        lint_flag_tokens.append(token)
+
+                lint_options, unknown_flags = parse_lint_flags(lint_flag_tokens)
+                if unknown_flags:
+                    print(f"Unknown lint flag(s): {' '.join(unknown_flags)}")
+                    continue
+
                 _, file_extension = os.path.splitext(fn)
 
                 if file_extension not in FILE_FORMAT:
@@ -396,7 +433,16 @@ def main(argv=None):
                     print(f"Failed to load script \"{fn}\"\n{e}")
                     continue
 
-                result, error, file_flags = run(fn, script)
+                run_lint = not run_nolint and not uses_nolint(script)
+
+                if run_lint:
+                    try:
+                        lint_options = apply_use_directives_to_lint_options(script, fn, lint_options)
+                    except ValueError as e:
+                        print(str(e))
+                        continue
+
+                result, error, file_flags = run(fn, script, lint_options=lint_options if run_lint else None)
                 if error:
                     print(error.as_string())
                 elif (debug or file_flags.get("debug", False)) and result:

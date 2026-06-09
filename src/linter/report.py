@@ -50,7 +50,7 @@ class LintReport:
         if source_by_file is None:
             source_by_file = self.source_by_file or {}
         if not self.issues:
-            return _color("✓ No lint issues found.", _Colors.GREEN)
+            return _color("No lint issues found.", _Colors.GREEN)
 
         lines = []
         grouped = {}

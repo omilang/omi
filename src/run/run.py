@@ -109,6 +109,7 @@ def run(fn, text, preserve_flags=False, lint_options=None):
         flags.eval_enabled = False
         flags.notypes = False
         flags.noasync = False
+        flags.nolint = False
         flags.no_colors = keep_no_colors
         flags.use_json = False
         flags.use_fix = False
@@ -189,5 +190,6 @@ def run(fn, text, preserve_flags=False, lint_options=None):
         'noecho': flags.noecho,
         'eval': flags.eval_enabled,
         'noasync': flags.noasync,
+        'nolint': flags.nolint,
     }
     return result.value, result.error, file_flags

@@ -203,6 +203,8 @@ class InterpreterModulesDirectivesMixin:
             runtime_flags.notypes = True
         elif directive == "noasync":
             runtime_flags.noasync = True
+        elif directive == "nolint":
+            runtime_flags.nolint = True
         elif directive == "json":
             runtime_flags.use_json = True
         elif directive == "fix":
