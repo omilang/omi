@@ -67,13 +67,13 @@ class Number(Value):
         if isinstance(other, Number):
             from src.values.types.boolean import Boolean
             return Boolean(self.value == other.value).set_context(self.context), None
-        return None, Value.illegal_operation(self, other, op='==')
+        return Value.get_comparison_eq(self, other)
 
     def get_comparison_ne(self, other):
         if isinstance(other, Number):
             from src.values.types.boolean import Boolean
             return Boolean(self.value != other.value).set_context(self.context), None
-        return None, Value.illegal_operation(self, other, op='!=')
+        return Value.get_comparison_ne(self, other)
 
     def get_comparison_lt(self, other):
         if isinstance(other, Number):
