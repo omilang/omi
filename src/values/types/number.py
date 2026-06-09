@@ -58,6 +58,17 @@ class Number(Value):
             return _num_result(result).set_context(self.context), None
         return None, Value.illegal_operation(self, other, op='/')
 
+    def moded_by(self, other):
+        if isinstance(other, Number):
+            if other.value == 0:
+                return None, RTError(
+                    other.pos_start, other.pos_end,
+                    'Modulo by zero',
+                    self.context
+                )
+            return _num_result(self.value % other.value).set_context(self.context), None
+        return None, Value.illegal_operation(self, other, op='%')
+
     def powed_by(self, other):
         if isinstance(other, Number):
             return _num_result(self.value ** other.value).set_context(self.context), None

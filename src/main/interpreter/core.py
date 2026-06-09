@@ -11,6 +11,7 @@ from src.values.types.string import String
 from src.var.token import (
     TT_MUL,
     TT_DIV,
+    TT_MOD,
     TT_PLUS,
     TT_MINUS,
     TT_POW,
@@ -495,6 +496,8 @@ class InterpreterCoreMixin:
             result, error = left.multed_by(right)
         elif node.op_tok.type == TT_DIV:
             result, error = left.dived_by(right)
+        elif node.op_tok.type == TT_MOD:
+            result, error = left.moded_by(right)
         elif node.op_tok.type == TT_POW:
             result, error = left.powed_by(right)
         elif node.op_tok.type == TT_EE:

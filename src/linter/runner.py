@@ -797,7 +797,7 @@ def _is_spacing_violation(line):
     code = line.split("//", 1)[0]
     code = re.sub(r'"(?:\\.|[^"\\])*"', '""', code)
     code = re.sub(r"'(?:\\.|[^'\\])*'", "''", code)
-    return bool(re.search(r"\w(?:[+\-*/=]|==|!=|<=|>=)\w", code))
+    return bool(re.search(r"\w(?:[+\-*/%=]|==|!=|<=|>=)\w", code))
 
 
 class LintRunner:

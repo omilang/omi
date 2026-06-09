@@ -7,6 +7,7 @@ TT_PLUS = "PLUS"
 TT_MINUS = "MINUS"
 TT_MUL = "MUL"
 TT_DIV = "DIV"
+TT_MOD = "MOD"
 TT_POW = "POW"
 TT_TILDE = "TILDE"
 
@@ -49,6 +50,7 @@ TOKEN_DISPLAY_NAMES = {
     TT_MINUS: "'-'",
     TT_MUL: "'*'",
     TT_DIV: "'/'",
+    TT_MOD: "'%'",
     TT_POW: "'^'",
     TT_EQ: "'='",
     TT_EE: "'=='",

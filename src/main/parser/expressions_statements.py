@@ -35,6 +35,7 @@ from src.var.token import (
     TT_FSTRING,
     TT_MUL,
     TT_DIV,
+    TT_MOD,
     TT_POW,
     TT_PLUS,
     TT_MINUS,
@@ -521,7 +522,7 @@ class ParserExpressionsStatementsMixin:
         return self.power()
 
     def term(self):
-        return self.bin_op(self.factor, (TT_MUL, TT_DIV))
+        return self.bin_op(self.factor, (TT_MUL, TT_DIV, TT_MOD))
 
     def arith_expr(self):
         return self.bin_op(self.term, (TT_PLUS, TT_MINUS))
