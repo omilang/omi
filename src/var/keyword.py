@@ -3,6 +3,7 @@ KEYWORDS = [
     "const",
     "and",
     "or",
+    "in",
     "is",
     "isnt",
     "if",

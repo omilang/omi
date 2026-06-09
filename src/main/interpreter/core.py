@@ -512,6 +512,8 @@ class InterpreterCoreMixin:
             result, error = left.get_comparison_lte(right)
         elif node.op_tok.type == TT_GTE:
             result, error = left.get_comparison_gte(right)
+        elif node.op_tok.matches(TT_KEYWORD, "in"):
+            result, error = self._membership_in(left, right, context)
         elif node.op_tok.matches(TT_KEYWORD, "and"):
             result, error = left.anded_by(right)
         elif node.op_tok.matches(TT_KEYWORD, "or"):
@@ -520,6 +522,25 @@ class InterpreterCoreMixin:
         if error:
             return res.failure(error)
         return res.success(result.set_pos(node.pos_start, node.pos_end))
+
+    def _membership_in(self, item, container, context):
+        if isinstance(container, List):
+            for element in container.elements:
+                if element._equals_value(item):
+                    return Boolean.true.copy().set_context(context), None
+            return Boolean.false.copy().set_context(context), None
+
+        if isinstance(container, Dict):
+            if not isinstance(item, String):
+                return None, item.illegal_operation(container, op="in")
+            return Boolean(item.value in container.entries).set_context(context), None
+
+        if isinstance(container, String):
+            if not isinstance(item, String):
+                return None, item.illegal_operation(container, op="in")
+            return Boolean(item.value in container.value).set_context(context), None
+
+        return None, item.illegal_operation(container, op="in")
 
     def visit_UnaryOpNode(self, node, context):
         res = RTResult()
