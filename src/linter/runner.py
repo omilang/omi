@@ -42,7 +42,7 @@ from src.nodes.types.fstring import FStringNode
 from src.nodes.types.list import ListNode
 from src.nodes.types.number import NumberNode
 from src.nodes.types.string import StringNode
-from src.nodes.types.subscript import DictSubscriptNode
+from src.nodes.types.subscript import DictSubscriptNode, SubscriptAssignNode
 from src.nodes.types.traitdef import TraitDefNode
 from src.nodes.types.typeannotation import DictTypeAnnotation, TypeAnnotationNode
 from src.nodes.variables.access import VarAccessNode
@@ -625,6 +625,41 @@ class LintAnalyzer:
     def visit_DictSubscriptNode(self, node):
         self._visit(node.base_node)
         self._visit(node.index_node)
+        return False
+
+    def _subscript_root_name(self, node):
+        target = node
+        while isinstance(target, DictSubscriptNode):
+            target = target.base_node
+        if isinstance(target, VarAccessNode):
+            return target.var_name_tok.value
+        return None
+
+    def visit_SubscriptAssignNode(self, node):
+        self._visit(node.target_node)
+        self._visit(node.value_node)
+        name = self._subscript_root_name(node.target_node)
+        if name is not None:
+            symbol = self._resolve(name)
+            if symbol is None:
+                self._issue(
+                    "undefined-var",
+                    LintLevel.ERROR,
+                    node.pos_start,
+                    node.pos_end,
+                    f"Variable '{name}' is used before it is declared",
+                )
+            else:
+                if symbol.is_const:
+                    self._issue(
+                        "const-reassign",
+                        LintLevel.ERROR,
+                        node.pos_start,
+                        node.pos_end,
+                        f"Cannot modify constant '{name}'",
+                    )
+                symbol.assigned_count += 1
+                symbol.used = True
         return False
 
     def visit_ListNode(self, node):

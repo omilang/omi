@@ -7,3 +7,14 @@ class DictSubscriptNode:
 
     def __repr__(self):
         return f'({self.base_node}[{self.index_node}])'
+
+
+class SubscriptAssignNode:
+    def __init__(self, target_node, value_node, pos_start, pos_end):
+        self.target_node = target_node
+        self.value_node = value_node
+        self.pos_start = pos_start
+        self.pos_end = pos_end
+
+    def __repr__(self):
+        return f'({self.target_node} = {self.value_node})'
