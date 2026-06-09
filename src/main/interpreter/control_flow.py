@@ -163,6 +163,19 @@ class InterpreterControlFlowMixin:
         self._register_defer_expr(context, node.expr_node)
         return RTResult().success(Number.null)
 
+    def visit_ThrowNode(self, node, context):
+        res = RTResult()
+        message = res.register(self.visit(node.message_node, context))
+        if res.should_return():
+            return res
+
+        return RTResult().failure(RTError(
+            node.pos_start,
+            node.pos_end,
+            str(message),
+            context,
+        ))
+
     def visit_ReturnNode(self, node, context):
         res = RTResult()
         from src.values.types.void import Void

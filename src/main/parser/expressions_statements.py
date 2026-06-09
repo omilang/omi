@@ -2,7 +2,7 @@ from src.error.message.invalidsyntax import InvalidSyntaxError
 from src.main.parser.helpers import sub_parse_expr
 from src.main.parser.result import ParseResult
 from src.nodes.block import BlockNode
-from src.nodes.control.flow import DeferNode
+from src.nodes.control.flow import DeferNode, ThrowNode
 from src.nodes.directives.setN import SetDirectiveNode
 from src.nodes.directives.typealiasN import TypeAliasNode
 from src.nodes.directives.useN import UseDirectiveNode
@@ -824,6 +824,16 @@ class ParserExpressionsStatementsMixin:
             if not expr:
                 self.reverse(res.to_reverse_count)
             return res.success(ReturnNode(expr, pos_start, self.current_tok.pos_start.copy()))
+
+        if self.current_tok.matches(TT_KEYWORD, "throw"):
+            res.register_advancement()
+            self.advance()
+
+            message_node = res.register(self.expr())
+            if res.error:
+                return res
+
+            return res.success(ThrowNode(message_node, pos_start, message_node.pos_end))
 
         if self.current_tok.matches(TT_KEYWORD, "type"):
             res.register_advancement()
