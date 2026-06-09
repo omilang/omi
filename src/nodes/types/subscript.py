@@ -9,6 +9,19 @@ class DictSubscriptNode:
         return f'({self.base_node}[{self.index_node}])'
 
 
+class SliceNode:
+    def __init__(self, start_node, end_node, pos_start, pos_end):
+        self.start_node = start_node
+        self.end_node = end_node
+        self.pos_start = pos_start
+        self.pos_end = pos_end
+
+    def __repr__(self):
+        start = "" if self.start_node is None else self.start_node
+        end = "" if self.end_node is None else self.end_node
+        return f'{start}:{end}'
+
+
 class SubscriptAssignNode:
     def __init__(self, target_node, value_node, pos_start, pos_end):
         self.target_node = target_node

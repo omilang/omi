@@ -314,6 +314,24 @@ class InterpreterCoreMixin:
                 )
             return value, None
 
+        if isinstance(container, String):
+            if not isinstance(index, Int):
+                return None, RTError(
+                    pos_start,
+                    pos_end,
+                    f"String index must be an integer, got {type(index).__name__.lower()}",
+                    context,
+                )
+            try:
+                return String(container.value[index.value]), None
+            except IndexError:
+                return None, RTError(
+                    pos_start,
+                    pos_end,
+                    f"String index {index.value} out of range (length {len(container.value)})",
+                    context,
+                )
+
         if isinstance(container, List):
             if not isinstance(index, Int):
                 return None, RTError(
@@ -335,12 +353,49 @@ class InterpreterCoreMixin:
         return None, RTError(
             pos_start,
             pos_end,
-            "Subscript access '[]' is only supported for dicts and lists",
+            "Subscript access '[]' is only supported for dicts, lists and strings",
             context,
         )
 
+    def _slice_bound(self, node, context, res, name):
+        if node is None:
+            return None, None
+        value = res.register(self.visit(node, context))
+        if res.should_return():
+            return None, res
+        if not isinstance(value, Int):
+            return None, res.failure(RTError(
+                node.pos_start,
+                node.pos_end,
+                f"Slice {name} must be an integer, got {type(value).__name__.lower()}",
+                context,
+            ))
+        return value.value, None
+
+    def _slice_value(self, container, slice_node, pos_start, pos_end, context, res):
+        start, failure = self._slice_bound(slice_node.start_node, context, res, "start")
+        if failure:
+            return None, failure
+        end, failure = self._slice_bound(slice_node.end_node, context, res, "end")
+        if failure:
+            return None, failure
+
+        if isinstance(container, List):
+            return List(container.elements[start:end], container.elem_annotation).set_context(context), None
+
+        if isinstance(container, String):
+            return String(container.value[start:end]).set_context(context), None
+
+        return None, res.failure(RTError(
+            pos_start,
+            pos_end,
+            "Slice access '[start:end]' is only supported for lists and strings",
+            context,
+        ))
+
     def _resolve_subscript_target(self, node, context, res):
         from src.nodes.types.subscript import DictSubscriptNode
+        from src.nodes.types.subscript import SliceNode
         from src.nodes.variables.access import VarAccessNode
         from src.values.types.void import Uninitialized
 
@@ -387,6 +442,14 @@ class InterpreterCoreMixin:
                 node.base_node.pos_start,
                 node.base_node.pos_end,
                 "Subscript assignment target must start from a variable",
+                context,
+            ))
+
+        if isinstance(node.index_node, SliceNode):
+            return None, None, res.failure(RTError(
+                node.pos_start,
+                node.pos_end,
+                "Slice assignment is not supported",
                 context,
             ))
 
@@ -610,11 +673,19 @@ class InterpreterCoreMixin:
         return res.success(left.copy().set_pos(node.pos_start, node.pos_end).set_context(context))
 
     def visit_DictSubscriptNode(self, node, context):
+        from src.nodes.types.subscript import SliceNode
+
         res = RTResult()
 
         base = res.register(self.visit(node.base_node, context))
         if res.should_return():
             return res
+
+        if isinstance(node.index_node, SliceNode):
+            value, failure = self._slice_value(base, node.index_node, node.pos_start, node.pos_end, context, res)
+            if failure:
+                return failure
+            return res.success(value.copy().set_pos(node.pos_start, node.pos_end).set_context(context))
 
         index = res.register(self.visit(node.index_node, context))
         if res.should_return():

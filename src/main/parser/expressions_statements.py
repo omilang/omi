@@ -23,7 +23,7 @@ from src.nodes.types.fstring import FStringNode
 from src.nodes.types.list import ListNode
 from src.nodes.types.number import NumberNode
 from src.nodes.types.string import StringNode
-from src.nodes.types.subscript import DictSubscriptNode, SubscriptAssignNode
+from src.nodes.types.subscript import DictSubscriptNode, SliceNode, SubscriptAssignNode
 from src.nodes.types.typeannotation import TypeAnnotationNode
 from src.nodes.variables.access import VarAccessNode
 from src.nodes.variables.assign import VarAssignNode
@@ -428,9 +428,31 @@ class ParserExpressionsStatementsMixin:
                 res.register_advancement()
                 self.advance()
 
-                index = res.register(self.expr())
-                if res.error:
-                    return res
+                if self.current_tok.type == TT_RSQUARE:
+                    return res.failure(InvalidSyntaxError(
+                        self.current_tok.pos_start,
+                        self.current_tok.pos_end,
+                        "Expected subscript index or slice range",
+                    ))
+
+                start = None
+                if self.current_tok.type != TT_COLON:
+                    start = res.register(self.expr())
+                    if res.error:
+                        return res
+
+                if self.current_tok.type == TT_COLON:
+                    res.register_advancement()
+                    self.advance()
+
+                    end = None
+                    if self.current_tok.type != TT_RSQUARE:
+                        end = res.register(self.expr())
+                        if res.error:
+                            return res
+                    index = SliceNode(start, end, pos_start, self.current_tok.pos_start.copy())
+                else:
+                    index = start
 
                 if self.current_tok.type != TT_RSQUARE:
                     return res.failure(InvalidSyntaxError(
