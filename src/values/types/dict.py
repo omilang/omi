@@ -21,9 +21,10 @@ class Dict(Value):
         return len(self.entries) > 0
 
     def copy(self):
-        copy = Dict(dict(self.entries))
+        copy = Dict(self.entries)
         copy.set_pos(self.pos_start, self.pos_end)
         copy.set_context(self.context)
+        copy.is_const = self.is_const
         if hasattr(self, 'type_annotation'):
             copy.type_annotation = self.type_annotation
         if hasattr(self, 'type_name'):
