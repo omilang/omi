@@ -27,6 +27,7 @@ from src.nodes.types.subscript import DictSubscriptNode, SliceNode, SubscriptAss
 from src.nodes.types.typeannotation import TypeAnnotationNode
 from src.nodes.variables.access import VarAccessNode
 from src.nodes.variables.assign import VarAssignNode
+from src.tokens import Token
 from src.var.parser import COMPARISON_BIN_OPS, LOGICAL_BIN_OPS
 from src.var.token import (
     TT_INT,
@@ -36,6 +37,11 @@ from src.var.token import (
     TT_MUL,
     TT_DIV,
     TT_MOD,
+    TT_PLUS_EQ,
+    TT_MINUS_EQ,
+    TT_MUL_EQ,
+    TT_DIV_EQ,
+    TT_MOD_EQ,
     TT_POW,
     TT_PLUS,
     TT_MINUS,
@@ -62,6 +68,14 @@ from src.var.token import (
     TT_QUESTION,
     TT_E0F,
 )
+
+COMPOUND_ASSIGN_OPS = {
+    TT_PLUS_EQ: TT_PLUS,
+    TT_MINUS_EQ: TT_MINUS,
+    TT_MUL_EQ: TT_MUL,
+    TT_DIV_EQ: TT_DIV,
+    TT_MOD_EQ: TT_MOD,
+}
 
 
 class ParserExpressionsStatementsMixin:
@@ -1096,15 +1110,23 @@ class ParserExpressionsStatementsMixin:
 
         if self.current_tok.type == TT_IDENTIFIER:
             next_idx = self.tok_idx + 1
-            if next_idx < len(self.tokens) and self.tokens[next_idx].type == TT_EQ:
+            if next_idx < len(self.tokens) and self.tokens[next_idx].type in (TT_EQ, *COMPOUND_ASSIGN_OPS):
                 var_name = self.current_tok
                 res.register_advancement()
                 self.advance()
+                assign_tok = self.current_tok
                 res.register_advancement()
                 self.advance()
                 expr = res.register(self.expr())
                 if res.error:
                     return res
+                if assign_tok.type in COMPOUND_ASSIGN_OPS:
+                    op_tok = Token(
+                        COMPOUND_ASSIGN_OPS[assign_tok.type],
+                        pos_start=assign_tok.pos_start,
+                        pos_end=assign_tok.pos_end,
+                    )
+                    expr = BinOpNode(VarAccessNode(var_name), op_tok, expr)
                 return res.success(VarAssignNode(var_name, expr, None, is_reassign=True))
 
         node = res.register(self.bin_op(self.comp_expr, LOGICAL_BIN_OPS))
@@ -1112,18 +1134,26 @@ class ParserExpressionsStatementsMixin:
         if res.error:
             return res
 
-        if self.current_tok.type == TT_EQ:
+        if self.current_tok.type == TT_EQ or self.current_tok.type in COMPOUND_ASSIGN_OPS:
             if not isinstance(node, DictSubscriptNode):
                 return res.failure(InvalidSyntaxError(
                     self.current_tok.pos_start,
                     self.current_tok.pos_end,
-                    "Expected assignable target before '='",
+                    f"Expected assignable target before {self.describe_token(self.current_tok)}",
                 ))
+            assign_tok = self.current_tok
             res.register_advancement()
             self.advance()
             value = res.register(self.expr())
             if res.error:
                 return res
+            if assign_tok.type in COMPOUND_ASSIGN_OPS:
+                op_tok = Token(
+                    COMPOUND_ASSIGN_OPS[assign_tok.type],
+                    pos_start=assign_tok.pos_start,
+                    pos_end=assign_tok.pos_end,
+                )
+                value = BinOpNode(node, op_tok, value)
             return res.success(SubscriptAssignNode(node, value, node.pos_start, value.pos_end))
 
         if self.current_tok.type == TT_NULLCOAL:

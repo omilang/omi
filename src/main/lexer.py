@@ -44,19 +44,15 @@ class Lexer():
                     return [], error
                 tokens.append(string_tok)
             elif self.current_char == "+":
-                tokens.append(Token(TT_PLUS, pos_start=self.pos))
-                self.advance()
+                tokens.append(self.make_operator_or_equals(TT_PLUS, TT_PLUS_EQ))
             elif self.current_char == "-":
                 tokens.append(self.make_minus_or_arrow())
             elif self.current_char == "*":
-                tokens.append(Token(TT_MUL, pos_start=self.pos))
-                self.advance()
+                tokens.append(self.make_operator_or_equals(TT_MUL, TT_MUL_EQ))
             elif self.current_char == "/":
-                tokens.append(Token(TT_DIV, pos_start=self.pos))
-                self.advance()
+                tokens.append(self.make_operator_or_equals(TT_DIV, TT_DIV_EQ))
             elif self.current_char == "%":
-                tokens.append(Token(TT_MOD, pos_start=self.pos))
-                self.advance()
+                tokens.append(self.make_operator_or_equals(TT_MOD, TT_MOD_EQ))
             elif self.current_char == "^":
                 tokens.append(Token(TT_POW, pos_start=self.pos))
                 self.advance()
@@ -251,6 +247,20 @@ class Lexer():
         if self.current_char == ">":
             self.advance()
             tok_type = TT_ARROW
+        elif self.current_char == "=":
+            self.advance()
+            tok_type = TT_MINUS_EQ
+
+        return Token(tok_type, pos_start=pos_start, pos_end=self.pos)
+
+    def make_operator_or_equals(self, op_type, compound_type):
+        tok_type = op_type
+        pos_start = self.pos.copy()
+        self.advance()
+
+        if self.current_char == "=":
+            self.advance()
+            tok_type = compound_type
 
         return Token(tok_type, pos_start=pos_start, pos_end=self.pos)
 

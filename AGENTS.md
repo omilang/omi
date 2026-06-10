@@ -4,7 +4,7 @@
 3. Runtime and checks live in `src/run/`: `run.py`, `test_runner.py`, `typecheck.py`, `async_runtime.py`.
 4. Linter is in `src/linter/`, stdlib is in `src/stdlib/`, constants and types are in `src/var/`.
 5. Formats: source `.omi`, tests `.test.omi`, linter config `.omilint`.
-6. Commands: `python shell.py run <file.omi>`, `python shell.py test <path>`, `python shell.py lint <path>`.
+6. Commands: `omi run <file.omi>`, `omi test <path>`, `omi lint <path>`.
 7. Tests do not use pytest: there are Omi tests and Python runners in `tests/run_*.py`.
 8. Execution flow: CLI -> lexer -> parser -> preprocessor `@import/@use/@set` -> interpreter.
 9. Errors usually return as `err` with `as_string()`; remember to check the `run()` result.
