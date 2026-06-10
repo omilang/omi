@@ -17,7 +17,6 @@ from src.var.keyword import FILE_FORMAT, TEST_FILE_EXTENSION
 USE_DIRECTIVE_PATTERN = re.compile(
     r'^\s*@use\s+([A-Za-z_][A-Za-z0-9_]*)(?:\s+as\s+(.+?)|\s+(.+?))?\s*(?://.*)?$'
 )
-NOLINT_DIRECTIVE_PATTERN = re.compile(r'^\s*@nolint\s*(?://.*)?$')
 LEVEL_VALUES = {"error", "warning", "style", "security"}
 
 
@@ -110,24 +109,7 @@ def apply_use_directives_to_lint_options(source, file_path, lint_options):
 
 
 def uses_nolint(source):
-    return any(directive["name"] == "nolint" for directive in collect_use_directives(source)) or any(
-        NOLINT_DIRECTIVE_PATTERN.match(line) for line in source.splitlines()
-    )
-
-
-def strip_direct_nolint(source):
-    lines = []
-    for line in source.splitlines(keepends=True):
-        if NOLINT_DIRECTIVE_PATTERN.match(line):
-            if line.endswith("\r\n"):
-                lines.append("\r\n")
-            elif line.endswith("\n"):
-                lines.append("\n")
-            else:
-                lines.append("")
-        else:
-            lines.append(line)
-    return "".join(lines)
+    return any(directive["name"] == "nolint" for directive in collect_use_directives(source))
 
 
 def apply_use_directives_to_test_flags(source, file_path, failfast, json_output, save_path):
@@ -325,7 +307,7 @@ def main(argv=None):
 
         result, error, file_flags = run(
             fn,
-            strip_direct_nolint(script),
+            script,
             lint_options=lint_options if run_lint else None,
             script_args=script_args,
             compact_lint_output=True,
@@ -488,7 +470,7 @@ def main(argv=None):
 
                 result, error, file_flags = run(
                     fn,
-                    strip_direct_nolint(script),
+                    script,
                     lint_options=lint_options if run_lint else None,
                     script_args=script_args,
                     compact_lint_output=True,
