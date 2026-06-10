@@ -190,15 +190,19 @@ class InterpreterControlFlowMixin:
         return res.success_return(value)
 
     def _runtime_error_value(self, error, context, pos_start, pos_end):
-        trace_lines = error.as_dict()["trace"]
+        data = error.as_dict()
+        trace_lines = data["trace"]
         trace_values = [
             String(line).set_context(context).set_pos(pos_start, pos_end)
             for line in trace_lines
         ]
         return Dict({
-            "type": String(error.as_dict()["type"]),
-            "msg": String(error.as_dict()["msg"]),
+            "type": String(data["type"]),
+            "msg": String(data["msg"]),
             "trace": List(trace_values).set_context(context).set_pos(pos_start, pos_end),
+            "file": String(data["file"]),
+            "line": Number(data["line"]),
+            "column": Number(data["column"]),
         }).set_context(context).set_pos(pos_start, pos_end)
 
     def _pattern_matches(self, pattern, value, context):
