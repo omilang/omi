@@ -135,9 +135,11 @@ class BuiltInFunction(BaseFunction):
   execute_reprint.arg_names = ["value"]
 
   def execute_input(self, exec_ctx):
-    text = input(">>> ")
+    prompt = exec_ctx.symbol_table.get("prompt")
+    text = input(str(prompt))
     return RTResult().success(String(text))
-  execute_input.arg_names = []
+  execute_input.opt_names = ["prompt"]
+  execute_input.opt_defaults_factory = lambda: [String(">>> ")]
 
   def execute_clear(self, exec_ctx):
     os.system("cls" if os.name == "nt" else "cls") 
