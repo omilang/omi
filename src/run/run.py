@@ -102,7 +102,7 @@ global_symbol_table.set("range", BuiltInFunction.range)
 global_symbol_table.set("eval", BuiltInFunction.eval)
 global_symbol_table.set("cancel", BuiltInFunction.cancel)
 
-def run(fn, text, preserve_flags=False, lint_options=None, script_args=None):
+def run(fn, text, preserve_flags=False, lint_options=None, script_args=None, compact_lint_output=False):
     if not preserve_flags:
         keep_no_colors = flags.no_colors
         flags.debug = False
@@ -139,7 +139,12 @@ def run(fn, text, preserve_flags=False, lint_options=None, script_args=None):
             return None, LintAbortError(str(e)), {}
 
         if lint_options.json_output:
-            print(lint_result.report.to_json())
+            if lint_result.report.issues or not compact_lint_output:
+                print(lint_result.report.to_json())
+        elif compact_lint_output:
+            lint_text = lint_result.report.to_compact_text()
+            if lint_text:
+                print(lint_text, end="")
         else:
             print(lint_result.report.to_text())
 
@@ -151,7 +156,8 @@ def run(fn, text, preserve_flags=False, lint_options=None, script_args=None):
                     handle.write(script_text)
 
         if lint_options.failfast and lint_result.report.summary.get("errors", 0) > 0:
-            return None, LintAbortError("Lint failed: execution stopped"), {}
+            message = "" if compact_lint_output else "Lint failed: execution stopped"
+            return None, LintAbortError(message), {}
 
     if not preserve_flags:
         set_script_args(fn if fn != "<stdin>" else None, script_args or [])

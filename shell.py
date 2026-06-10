@@ -17,6 +17,7 @@ from src.var.keyword import FILE_FORMAT, TEST_FILE_EXTENSION
 USE_DIRECTIVE_PATTERN = re.compile(
     r'^\s*@use\s+([A-Za-z_][A-Za-z0-9_]*)(?:\s+as\s+(.+?)|\s+(.+?))?\s*(?://.*)?$'
 )
+NOLINT_DIRECTIVE_PATTERN = re.compile(r'^\s*@nolint\s*(?://.*)?$')
 LEVEL_VALUES = {"error", "warning", "style", "security"}
 
 
@@ -109,7 +110,24 @@ def apply_use_directives_to_lint_options(source, file_path, lint_options):
 
 
 def uses_nolint(source):
-    return any(directive["name"] == "nolint" for directive in collect_use_directives(source))
+    return any(directive["name"] == "nolint" for directive in collect_use_directives(source)) or any(
+        NOLINT_DIRECTIVE_PATTERN.match(line) for line in source.splitlines()
+    )
+
+
+def strip_direct_nolint(source):
+    lines = []
+    for line in source.splitlines(keepends=True):
+        if NOLINT_DIRECTIVE_PATTERN.match(line):
+            if line.endswith("\r\n"):
+                lines.append("\r\n")
+            elif line.endswith("\n"):
+                lines.append("\n")
+            else:
+                lines.append("")
+        else:
+            lines.append(line)
+    return "".join(lines)
 
 
 def apply_use_directives_to_test_flags(source, file_path, failfast, json_output, save_path):
@@ -305,9 +323,17 @@ def main(argv=None):
                 print(str(e))
                 return 1
 
-        result, error, file_flags = run(fn, script, lint_options=lint_options if run_lint else None, script_args=script_args)
+        result, error, file_flags = run(
+            fn,
+            strip_direct_nolint(script),
+            lint_options=lint_options if run_lint else None,
+            script_args=script_args,
+            compact_lint_output=True,
+        )
         if error:
-            print(error.as_string())
+            error_text = error.as_string()
+            if error_text:
+                print(error_text)
             return 1
         if (debug or file_flags.get("debug", False)) and result:
             if len(result.elements) == 1:
@@ -460,9 +486,17 @@ def main(argv=None):
                         print(str(e))
                         continue
 
-                result, error, file_flags = run(fn, script, lint_options=lint_options if run_lint else None, script_args=script_args)
+                result, error, file_flags = run(
+                    fn,
+                    strip_direct_nolint(script),
+                    lint_options=lint_options if run_lint else None,
+                    script_args=script_args,
+                    compact_lint_output=True,
+                )
                 if error:
-                    print(error.as_string())
+                    error_text = error.as_string()
+                    if error_text:
+                        print(error_text)
                 elif (debug or file_flags.get("debug", False)) and result:
                     if len(result.elements) == 1:
                         print(repr(result.elements[0]))
@@ -515,7 +549,9 @@ def main(argv=None):
             result, error, _ = run("<stdin>", text)
 
             if error:
-                print(error.as_string())
+                error_text = error.as_string()
+                if error_text:
+                    print(error_text)
             elif debug and result:
                 if len(result.elements) == 1:
                     print(repr(result.elements[0]))
