@@ -34,6 +34,10 @@ class Lexer():
                 self.advance()
             elif self.current_char == "/" and self.pos.idx + 1 < len(self.text) and self.text[self.pos.idx + 1] == "/":
                 self.skip_comment()
+            elif self.current_char == "/" and self.pos.idx + 1 < len(self.text) and self.text[self.pos.idx + 1] == "{":
+                error = self.skip_multiline_comment()
+                if error:
+                    return [], error
             elif self.current_char in DIGITS:
                 tokens.append(self.make_number())
             elif self.current_char in LETTERS or self.current_char == "_":
@@ -313,3 +317,17 @@ class Lexer():
 
         if self.current_char == '\n':
             self.advance()
+
+    def skip_multiline_comment(self):
+        pos_start = self.pos.copy()
+        self.advance()
+        self.advance()
+
+        while self.current_char is not None:
+            if self.current_char == "}" and self.pos.idx + 1 < len(self.text) and self.text[self.pos.idx + 1] == "/":
+                self.advance()
+                self.advance()
+                return None
+            self.advance()
+
+        return InvalidSyntaxError(pos_start, self.pos, "Multiline comment is missing closing }/")
