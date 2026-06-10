@@ -7,6 +7,7 @@ from src.values.types.number import Number
 from src.values.types.boolean import Boolean
 from src.values.types.null import Null
 from src.values.function.buildin import BuiltInFunction
+from src.stdlib.system import set_script_args
 from src.preprocessor import process
 from src.run.async_runtime import ensure_event_loop, run_pending_tasks
 from src.linter import LintRunner
@@ -101,7 +102,7 @@ global_symbol_table.set("range", BuiltInFunction.range)
 global_symbol_table.set("eval", BuiltInFunction.eval)
 global_symbol_table.set("cancel", BuiltInFunction.cancel)
 
-def run(fn, text, preserve_flags=False, lint_options=None):
+def run(fn, text, preserve_flags=False, lint_options=None, script_args=None):
     if not preserve_flags:
         keep_no_colors = flags.no_colors
         flags.debug = False
@@ -151,6 +152,9 @@ def run(fn, text, preserve_flags=False, lint_options=None):
 
         if lint_options.failfast and lint_result.report.summary.get("errors", 0) > 0:
             return None, LintAbortError("Lint failed: execution stopped"), {}
+
+    if not preserve_flags:
+        set_script_args(fn if fn != "<stdin>" else None, script_args or [])
 
     clean_text = process(script_text)
 

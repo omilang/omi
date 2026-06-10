@@ -218,6 +218,44 @@ def parse_lint_flags(args):
     )
 
 
+def parse_run_arguments(args):
+    run_nolint = False
+    lint_flag_tokens = []
+    script_args = []
+    parsing_flags = True
+
+    i = 0
+    while i < len(args):
+        token = args[i]
+
+        if parsing_flags and token == "--":
+            script_args.extend(args[i + 1:])
+            break
+        if parsing_flags and token == "--lint":
+            pass
+        elif parsing_flags and token == "--nolint":
+            run_nolint = True
+        elif parsing_flags and token in ("--fix", "--json", "--failfast"):
+            lint_flag_tokens.append(token)
+        elif parsing_flags and (token.startswith("--level=") or token.startswith("--rules=") or token.startswith("--config=")):
+            lint_flag_tokens.append(token)
+        elif parsing_flags and token == "--config":
+            lint_flag_tokens.append(token)
+            if i + 1 < len(args) and not args[i + 1].startswith("--"):
+                lint_flag_tokens.append(args[i + 1])
+                i += 1
+        elif parsing_flags and token.startswith("--"):
+            lint_flag_tokens.append(token)
+        else:
+            parsing_flags = False
+            script_args.append(token)
+
+        i += 1
+
+    lint_options, unknown_flags = parse_lint_flags(lint_flag_tokens)
+    return run_nolint, lint_options, unknown_flags, script_args
+
+
 def main(argv=None):
     args = argv if argv is not None else sys.argv[1:]
     args, no_colors_requested = _extract_no_colors(args)
@@ -247,17 +285,7 @@ def main(argv=None):
         run_flags, run_no_colors = _extract_no_colors(run_flags)
         if run_no_colors:
             flags.no_colors = True
-        run_nolint = False
-        lint_flag_tokens = []
-        for token in run_flags:
-            if token == "--lint":
-                continue
-            if token == "--nolint":
-                run_nolint = True
-            else:
-                lint_flag_tokens.append(token)
-
-        lint_options, unknown_flags = parse_lint_flags(lint_flag_tokens)
+        run_nolint, lint_options, unknown_flags, script_args = parse_run_arguments(run_flags)
         if unknown_flags:
             print(f"Unknown lint flag(s): {' '.join(unknown_flags)}")
             return 1
@@ -277,7 +305,7 @@ def main(argv=None):
                 print(str(e))
                 return 1
 
-        result, error, file_flags = run(fn, script, lint_options=lint_options if run_lint else None)
+        result, error, file_flags = run(fn, script, lint_options=lint_options if run_lint else None, script_args=script_args)
         if error:
             print(error.as_string())
             return 1
@@ -406,17 +434,7 @@ def main(argv=None):
                 if run_no_colors:
                     flags.no_colors = True
 
-                run_nolint = False
-                lint_flag_tokens = []
-                for token in run_flags:
-                    if token == "--lint":
-                        continue
-                    if token == "--nolint":
-                        run_nolint = True
-                    else:
-                        lint_flag_tokens.append(token)
-
-                lint_options, unknown_flags = parse_lint_flags(lint_flag_tokens)
+                run_nolint, lint_options, unknown_flags, script_args = parse_run_arguments(run_flags)
                 if unknown_flags:
                     print(f"Unknown lint flag(s): {' '.join(unknown_flags)}")
                     continue
@@ -442,7 +460,7 @@ def main(argv=None):
                         print(str(e))
                         continue
 
-                result, error, file_flags = run(fn, script, lint_options=lint_options if run_lint else None)
+                result, error, file_flags = run(fn, script, lint_options=lint_options if run_lint else None, script_args=script_args)
                 if error:
                     print(error.as_string())
                 elif (debug or file_flags.get("debug", False)) and result:

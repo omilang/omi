@@ -19,7 +19,7 @@ Copyright 2026 Qualsu. Distributed under the MIT License
 
 USAGE
   omi [flags]
-  omi run <file.omi> [flags]
+  omi run <file.omi> [flags] [--] [args...]
   omi test <file.test.omi|directory> [flags]
   omi lint <file.omi|directory> [flags]
   

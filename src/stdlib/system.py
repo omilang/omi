@@ -5,12 +5,23 @@ import subprocess
 from src.values.value import Value
 from src.values.types.number import Number
 from src.values.types.string import String
+from src.values.types.list import List
 from src.values.types.module import Module
 from src.values.function.stdlib import StdlibFunction
 from src.run.runtime import RTResult
 from src.run.context import Context
 from src.main.symboltable import SymbolTable
 from src.error.message.rt import RTError
+
+
+_script_name = None
+_script_args = []
+
+
+def set_script_args(script_name, args):
+    global _script_name, _script_args
+    _script_name = script_name
+    _script_args = list(args or [])
 
 
 class SystemBuiltInFunction(StdlibFunction):
@@ -94,11 +105,23 @@ class SystemBuiltInFunction(StdlibFunction):
         return RTResult().success(String(os.getcwd()))
     execute_cwd.arg_names = []
 
+    def execute_args(self, exec_ctx):
+        return RTResult().success(List([String(arg) for arg in _script_args]))
+    execute_args.arg_names = []
+
+    def execute_argv(self, exec_ctx):
+        values = []
+        if _script_name is not None:
+            values.append(_script_name)
+        values.extend(_script_args)
+        return RTResult().success(List([String(arg) for arg in values]))
+    execute_argv.arg_names = []
+
 
 def create_system_module():
     symbol_table = SymbolTable()
 
-    funcs = ["exec", "env", "set_env", "exit", "cwd"]
+    funcs = ["exec", "env", "set_env", "exit", "cwd", "args", "argv"]
     for name in funcs:
         symbol_table.set(name, SystemBuiltInFunction(name))
 
