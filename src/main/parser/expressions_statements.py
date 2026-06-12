@@ -15,6 +15,7 @@ from src.nodes.jump.breakN import BreakNode
 from src.nodes.jump.continueN import ContinueNode
 from src.nodes.jump.returnN import ReturnNode
 from src.nodes.ops.binop import BinOpNode
+from src.nodes.ops.incdec import IncDecNode
 from src.nodes.ops.nullcoal import NullCoalNode
 from src.nodes.ops.ternaryop import TernaryOpNode
 from src.nodes.ops.unaryop import UnaryOpNode
@@ -42,6 +43,8 @@ from src.var.token import (
     TT_MUL_EQ,
     TT_DIV_EQ,
     TT_MOD_EQ,
+    TT_PLUSPLUS,
+    TT_MINUSMINUS,
     TT_POW,
     TT_PLUS,
     TT_MINUS,
@@ -77,8 +80,21 @@ COMPOUND_ASSIGN_OPS = {
     TT_MOD_EQ: TT_MOD,
 }
 
+INC_DEC_OPS = (TT_PLUSPLUS, TT_MINUSMINUS)
+
 
 class ParserExpressionsStatementsMixin:
+    def _is_incdec_target(self, node):
+        return isinstance(node, (VarAccessNode, DictSubscriptNode))
+
+    def _incdec_target_error(self, op_tok, is_postfix):
+        direction = "before" if is_postfix else "after"
+        return InvalidSyntaxError(
+            op_tok.pos_start,
+            op_tok.pos_end,
+            f"Expected variable or subscript target {direction} {self.describe_token(op_tok)}",
+        )
+
     def list_expr(self):
         res = ParseResult()
         element_nodes = []
@@ -540,12 +556,31 @@ class ParserExpressionsStatementsMixin:
 
                 res.register_advancement()
                 self.advance()
-            return res.success(CallNode(atom, arg_nodes, kwarg_nodes))
+            atom = CallNode(atom, arg_nodes, kwarg_nodes)
+
+        if self.current_tok.type in INC_DEC_OPS:
+            op_tok = self.current_tok
+            if not self._is_incdec_target(atom):
+                return res.failure(self._incdec_target_error(op_tok, True))
+            res.register_advancement()
+            self.advance()
+            return res.success(IncDecNode(atom, op_tok, True))
+
         return res.success(atom)
 
     def factor(self):
         res = ParseResult()
         tok = self.current_tok
+
+        if tok.type in INC_DEC_OPS:
+            res.register_advancement()
+            self.advance()
+            target = res.register(self.call())
+            if res.error:
+                return res
+            if not self._is_incdec_target(target):
+                return res.failure(self._incdec_target_error(tok, False))
+            return res.success(IncDecNode(target, tok, False))
 
         if tok.type in (TT_PLUS, TT_MINUS):
             res.register_advancement()

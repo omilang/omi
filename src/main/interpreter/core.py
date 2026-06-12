@@ -1,19 +1,28 @@
 import src.var.flags as runtime_flags
 
 from src.error.message.rt import RTError
+from src.nodes.ops.binop import BinOpNode
+from src.nodes.types.number import NumberNode
+from src.nodes.types.subscript import SubscriptAssignNode
+from src.nodes.variables.access import VarAccessNode
+from src.nodes.variables.assign import VarAssignNode
 from src.run.runtime import RTResult
 from src.run.typecheck import check_type
+from src.tokens import Token
 from src.values.types.boolean import Boolean
 from src.values.types.dict import Dict
 from src.values.types.list import List
 from src.values.types.number import Number, Int, Float
 from src.values.types.string import String
 from src.var.token import (
+    TT_INT,
     TT_MUL,
     TT_DIV,
     TT_MOD,
     TT_PLUS,
+    TT_PLUSPLUS,
     TT_MINUS,
+    TT_MINUSMINUS,
     TT_POW,
     TT_KEYWORD,
     TT_EE,
@@ -26,6 +35,17 @@ from src.var.token import (
 
 
 class InterpreterCoreMixin:
+    def _build_incdec_assign_node(self, target_node, op_tok):
+        op_type = TT_PLUS if op_tok.type == TT_PLUSPLUS else TT_MINUS
+        bin_op_tok = Token(op_type, pos_start=op_tok.pos_start, pos_end=op_tok.pos_end)
+        one_tok = Token(TT_INT, 1, pos_start=op_tok.pos_start, pos_end=op_tok.pos_end)
+        value_node = BinOpNode(target_node, bin_op_tok, NumberNode(one_tok))
+
+        if isinstance(target_node, VarAccessNode):
+            return VarAssignNode(target_node.var_name_tok, value_node, None, is_reassign=True)
+
+        return SubscriptAssignNode(target_node, value_node, target_node.pos_start, value_node.pos_end)
+
     def _push_defer_scope(self, context):
         if not hasattr(context, "defer_scopes"):
             context.defer_scopes = []
@@ -695,3 +715,18 @@ class InterpreterCoreMixin:
         if error:
             return res.failure(error)
         return res.success(value.copy().set_pos(node.pos_start, node.pos_end).set_context(context))
+
+    def visit_IncDecNode(self, node, context):
+        res = RTResult()
+        original = res.register(self.visit(node.target_node, context))
+        if res.should_return():
+            return res
+
+        assign_node = self._build_incdec_assign_node(node.target_node, node.op_tok)
+        updated = res.register(self.visit(assign_node, context))
+        if res.should_return():
+            return res
+
+        if node.is_postfix:
+            return res.success(original.copy().set_pos(node.pos_start, node.pos_end).set_context(context))
+        return res.success(updated.copy().set_pos(node.pos_start, node.pos_end).set_context(context))

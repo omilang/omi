@@ -5,6 +5,8 @@ TT_FSTRING = "FSTRING"
 
 TT_PLUS = "PLUS"
 TT_MINUS = "MINUS"
+TT_PLUSPLUS = "PLUSPLUS"
+TT_MINUSMINUS = "MINUSMINUS"
 TT_MUL = "MUL"
 TT_DIV = "DIV"
 TT_MOD = "MOD"
@@ -53,6 +55,8 @@ TOKEN_DISPLAY_NAMES = {
     TT_NEWLINE: "newline",
     TT_PLUS: "'+'",
     TT_MINUS: "'-'",
+    TT_PLUSPLUS: "'++'",
+    TT_MINUSMINUS: "'--'",
     TT_MUL: "'*'",
     TT_DIV: "'/'",
     TT_MOD: "'%'",

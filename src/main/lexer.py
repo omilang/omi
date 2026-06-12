@@ -48,7 +48,7 @@ class Lexer():
                     return [], error
                 tokens.append(string_tok)
             elif self.current_char == "+":
-                tokens.append(self.make_operator_or_equals(TT_PLUS, TT_PLUS_EQ))
+                tokens.append(self.make_plus_or_increment())
             elif self.current_char == "-":
                 tokens.append(self.make_minus_or_arrow())
             elif self.current_char == "*":
@@ -251,9 +251,26 @@ class Lexer():
         if self.current_char == ">":
             self.advance()
             tok_type = TT_ARROW
+        elif self.current_char == "-":
+            self.advance()
+            tok_type = TT_MINUSMINUS
         elif self.current_char == "=":
             self.advance()
             tok_type = TT_MINUS_EQ
+
+        return Token(tok_type, pos_start=pos_start, pos_end=self.pos)
+
+    def make_plus_or_increment(self):
+        tok_type = TT_PLUS
+        pos_start = self.pos.copy()
+        self.advance()
+
+        if self.current_char == "+":
+            self.advance()
+            tok_type = TT_PLUSPLUS
+        elif self.current_char == "=":
+            self.advance()
+            tok_type = TT_PLUS_EQ
 
         return Token(tok_type, pos_start=pos_start, pos_end=self.pos)
 

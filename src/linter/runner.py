@@ -29,6 +29,7 @@ from src.nodes.jump.returnN import ReturnNode
 from src.nodes.loops.forN import ForNode
 from src.nodes.loops.whileN import WhileNode
 from src.nodes.ops.binop import BinOpNode
+from src.nodes.ops.incdec import IncDecNode
 from src.nodes.ops.nullcoal import NullCoalNode
 from src.nodes.ops.ternaryop import TernaryOpNode
 from src.nodes.ops.unaryop import UnaryOpNode
@@ -384,6 +385,59 @@ class LintAnalyzer:
                 symbol.type_annotation = annotation or symbol.type_annotation
             if node.is_const:
                 symbol.is_const = True
+        return False
+
+    def visit_IncDecNode(self, node):
+        self._visit(node.target_node)
+
+        if isinstance(node.target_node, VarAccessNode):
+            name = node.target_node.var_name_tok.value
+            symbol = self._resolve(name)
+            if symbol is None:
+                self._issue(
+                    "undefined-var",
+                    LintLevel.ERROR,
+                    node.pos_start,
+                    node.pos_end,
+                    f"Variable '{name}' is used before it is declared",
+                )
+                return False
+            if symbol.is_const:
+                self._issue(
+                    "const-reassign",
+                    LintLevel.ERROR,
+                    node.pos_start,
+                    node.pos_end,
+                    f"Cannot reassign constant '{name}'",
+                )
+            symbol.assigned_count += 1
+            symbol.used = True
+            return False
+
+        if isinstance(node.target_node, DictSubscriptNode):
+            name = self._subscript_root_name(node.target_node)
+            if name is None:
+                return False
+            symbol = self._resolve(name)
+            if symbol is None:
+                self._issue(
+                    "undefined-var",
+                    LintLevel.ERROR,
+                    node.pos_start,
+                    node.pos_end,
+                    f"Variable '{name}' is used before it is declared",
+                )
+                return False
+            if symbol.is_const:
+                self._issue(
+                    "const-reassign",
+                    LintLevel.ERROR,
+                    node.pos_start,
+                    node.pos_end,
+                    f"Cannot modify constant '{name}'",
+                )
+            symbol.assigned_count += 1
+            symbol.used = True
         return False
 
     def visit_FuncDefNode(self, node):
