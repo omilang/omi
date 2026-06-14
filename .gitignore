@@ -9,6 +9,8 @@ __pycache__/
 *.omilint
 !example.omi
 
+TODO.md
+
 vscode-extension/
 docs/
 tests/

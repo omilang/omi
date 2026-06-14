@@ -108,6 +108,10 @@ def apply_use_directives_to_lint_options(source, file_path, lint_options):
     return merged
 
 
+def uses_nolint(source):
+    return any(directive["name"] == "nolint" for directive in collect_use_directives(source))
+
+
 def apply_use_directives_to_test_flags(source, file_path, failfast, json_output, save_path):
     merged_failfast = failfast
     merged_json = json_output
@@ -214,6 +218,44 @@ def parse_lint_flags(args):
     )
 
 
+def parse_run_arguments(args):
+    run_nolint = False
+    lint_flag_tokens = []
+    script_args = []
+    parsing_flags = True
+
+    i = 0
+    while i < len(args):
+        token = args[i]
+
+        if parsing_flags and token == "--":
+            script_args.extend(args[i + 1:])
+            break
+        if parsing_flags and token == "--lint":
+            pass
+        elif parsing_flags and token == "--nolint":
+            run_nolint = True
+        elif parsing_flags and token in ("--fix", "--json", "--failfast"):
+            lint_flag_tokens.append(token)
+        elif parsing_flags and (token.startswith("--level=") or token.startswith("--rules=") or token.startswith("--config=")):
+            lint_flag_tokens.append(token)
+        elif parsing_flags and token == "--config":
+            lint_flag_tokens.append(token)
+            if i + 1 < len(args) and not args[i + 1].startswith("--"):
+                lint_flag_tokens.append(args[i + 1])
+                i += 1
+        elif parsing_flags and token.startswith("--"):
+            lint_flag_tokens.append(token)
+        else:
+            parsing_flags = False
+            script_args.append(token)
+
+        i += 1
+
+    lint_options, unknown_flags = parse_lint_flags(lint_flag_tokens)
+    return run_nolint, lint_options, unknown_flags, script_args
+
+
 def main(argv=None):
     args = argv if argv is not None else sys.argv[1:]
     args, no_colors_requested = _extract_no_colors(args)
@@ -243,15 +285,7 @@ def main(argv=None):
         run_flags, run_no_colors = _extract_no_colors(run_flags)
         if run_no_colors:
             flags.no_colors = True
-        run_lint = False
-        lint_flag_tokens = []
-        for token in run_flags:
-            if token == "--lint":
-                run_lint = True
-            else:
-                lint_flag_tokens.append(token)
-
-        lint_options, unknown_flags = parse_lint_flags(lint_flag_tokens)
+        run_nolint, lint_options, unknown_flags, script_args = parse_run_arguments(run_flags)
         if unknown_flags:
             print(f"Unknown lint flag(s): {' '.join(unknown_flags)}")
             return 1
@@ -262,6 +296,8 @@ def main(argv=None):
             print(f"Failed to load script \"{fn}\"\n{e}")
             return 1
 
+        run_lint = not run_nolint and not uses_nolint(script)
+
         if run_lint:
             try:
                 lint_options = apply_use_directives_to_lint_options(script, fn, lint_options)
@@ -269,9 +305,17 @@ def main(argv=None):
                 print(str(e))
                 return 1
 
-        result, error, file_flags = run(fn, script, lint_options=lint_options if run_lint else None)
+        result, error, file_flags = run(
+            fn,
+            script,
+            lint_options=lint_options if run_lint else None,
+            script_args=script_args,
+            compact_lint_output=True,
+        )
         if error:
-            print(error.as_string())
+            error_text = error.as_string()
+            if error_text:
+                print(error_text)
             return 1
         if (debug or file_flags.get("debug", False)) and result:
             if len(result.elements) == 1:
@@ -383,7 +427,26 @@ def main(argv=None):
                 continue
 
             if text.strip().startswith("run "):
-                fn = text.strip()[4:].strip()
+                try:
+                    command_tokens = shlex.split(text.strip())
+                except ValueError as e:
+                    print(f"Invalid run command: {e}")
+                    continue
+
+                if len(command_tokens) < 2:
+                    print("Usage: run <file.omi> [flags]")
+                    continue
+
+                fn = command_tokens[1]
+                run_flags, run_no_colors = _extract_no_colors(command_tokens[2:])
+                if run_no_colors:
+                    flags.no_colors = True
+
+                run_nolint, lint_options, unknown_flags, script_args = parse_run_arguments(run_flags)
+                if unknown_flags:
+                    print(f"Unknown lint flag(s): {' '.join(unknown_flags)}")
+                    continue
+
                 _, file_extension = os.path.splitext(fn)
 
                 if file_extension not in FILE_FORMAT:
@@ -396,9 +459,26 @@ def main(argv=None):
                     print(f"Failed to load script \"{fn}\"\n{e}")
                     continue
 
-                result, error, file_flags = run(fn, script)
+                run_lint = not run_nolint and not uses_nolint(script)
+
+                if run_lint:
+                    try:
+                        lint_options = apply_use_directives_to_lint_options(script, fn, lint_options)
+                    except ValueError as e:
+                        print(str(e))
+                        continue
+
+                result, error, file_flags = run(
+                    fn,
+                    script,
+                    lint_options=lint_options if run_lint else None,
+                    script_args=script_args,
+                    compact_lint_output=True,
+                )
                 if error:
-                    print(error.as_string())
+                    error_text = error.as_string()
+                    if error_text:
+                        print(error_text)
                 elif (debug or file_flags.get("debug", False)) and result:
                     if len(result.elements) == 1:
                         print(repr(result.elements[0]))
@@ -451,7 +531,9 @@ def main(argv=None):
             result, error, _ = run("<stdin>", text)
 
             if error:
-                print(error.as_string())
+                error_text = error.as_string()
+                if error_text:
+                    print(error_text)
             elif debug and result:
                 if len(result.elements) == 1:
                     print(repr(result.elements[0]))

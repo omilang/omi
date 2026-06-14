@@ -7,6 +7,7 @@ from src.stdlib.json import create_json_module
 from src.stdlib.http import create_http_module
 from src.stdlib.txt import create_txt_module
 from src.stdlib.string import create_string_module
+from src.stdlib.dict import create_dict_module
 from src.stdlib.regex import create_regex_module
 from src.stdlib.log import create_log_module
 from src.stdlib.color import create_color_module
@@ -22,6 +23,7 @@ BUILTIN_MODULES = {
     "omi:http":   create_http_module,
     "omi:txt":    create_txt_module,
     "omi:string": create_string_module,
+    "omi:dict":   create_dict_module,
     "omi:regex":  create_regex_module,
     "omi:log":    create_log_module,
     "omi:color":  create_color_module,

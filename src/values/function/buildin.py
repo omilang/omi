@@ -80,6 +80,24 @@ class BuiltInFunction(BaseFunction):
   def __repr__(self):
     return f"<built-in function {self.name}>"
 
+  def _array_index_of(self, list_, value):
+    for i, element in enumerate(list_.elements):
+      comparison, err = element.get_comparison_eq(value)
+      if err:
+        return None, err
+      if comparison.is_true():
+        return i, None
+    return -1, None
+
+  def _sort_key(self, value):
+    if isinstance(value, Boolean):
+      return ("bool", int(value.value))
+    if isinstance(value, Number):
+      return ("number", value.value)
+    if isinstance(value, String):
+      return ("string", value.value)
+    return None
+
   def _emit(self, values, sep="", end=""):
     if flags.noecho:
       return
@@ -117,9 +135,11 @@ class BuiltInFunction(BaseFunction):
   execute_reprint.arg_names = ["value"]
 
   def execute_input(self, exec_ctx):
-    text = input(">>> ")
+    prompt = exec_ctx.symbol_table.get("prompt")
+    text = input(str(prompt))
     return RTResult().success(String(text))
-  execute_input.arg_names = []
+  execute_input.opt_names = ["prompt"]
+  execute_input.opt_defaults_factory = lambda: [String(">>> ")]
 
   def execute_clear(self, exec_ctx):
     os.system("cls" if os.name == "nt" else "cls") 
@@ -278,6 +298,196 @@ class BuiltInFunction(BaseFunction):
     listA.elements.extend(listB.elements)
     return RTResult().success(Number.null)
   execute_extend.arg_names = ["listA", "listB"]
+
+  def execute_insert(self, exec_ctx):
+    list_ = exec_ctx.symbol_table.get("list")
+    index = exec_ctx.symbol_table.get("index")
+    value = exec_ctx.symbol_table.get("value")
+
+    if not isinstance(list_, List):
+      return RTResult().failure(RTError(
+        self.pos_start, self.pos_end,
+        "First argument must be array",
+        exec_ctx
+      ))
+
+    if hasattr(list_, 'is_const') and list_.is_const:
+      return RTResult().failure(RTError(
+        self.pos_start, self.pos_end,
+        "Cannot modify a constant array",
+        exec_ctx
+      ))
+
+    if not isinstance(index, Number):
+      return RTResult().failure(RTError(
+        self.pos_start, self.pos_end,
+        "Second argument must be number",
+        exec_ctx
+      ))
+
+    if list_.max_size is not None and len(list_.elements) >= list_.max_size:
+      return RTResult().failure(RTError(
+        self.pos_start, self.pos_end,
+        f"Array exceeds maximum size of {list_.max_size}",
+        exec_ctx
+      ))
+
+    if list_.elem_annotation is not None:
+      from src.run.typecheck import check_type
+      err = check_type(value, list_.elem_annotation, exec_ctx, self.pos_start, self.pos_end)
+      if err:
+        return RTResult().failure(err)
+
+    list_.elements.insert(int(index.value), value)
+    return RTResult().success(Number.null)
+  execute_insert.arg_names = ["list", "index", "value"]
+
+  def execute_remove(self, exec_ctx):
+    list_ = exec_ctx.symbol_table.get("list")
+    value = exec_ctx.symbol_table.get("value")
+
+    if not isinstance(list_, List):
+      return RTResult().failure(RTError(
+        self.pos_start, self.pos_end,
+        "First argument must be array",
+        exec_ctx
+      ))
+
+    if hasattr(list_, 'is_const') and list_.is_const:
+      return RTResult().failure(RTError(
+        self.pos_start, self.pos_end,
+        "Cannot modify a constant array",
+        exec_ctx
+      ))
+
+    index, err = self._array_index_of(list_, value)
+    if err:
+      return RTResult().failure(err)
+    if index == -1:
+      return RTResult().success(Boolean.false)
+
+    list_.elements.pop(index)
+    return RTResult().success(Boolean.true)
+  execute_remove.arg_names = ["list", "value"]
+
+  def execute_contains(self, exec_ctx):
+    list_ = exec_ctx.symbol_table.get("list")
+    value = exec_ctx.symbol_table.get("value")
+
+    if not isinstance(list_, List):
+      return RTResult().failure(RTError(
+        self.pos_start, self.pos_end,
+        "First argument must be array",
+        exec_ctx
+      ))
+
+    index, err = self._array_index_of(list_, value)
+    if err:
+      return RTResult().failure(err)
+    return RTResult().success(Boolean(index != -1))
+  execute_contains.arg_names = ["list", "value"]
+
+  def execute_index_of(self, exec_ctx):
+    list_ = exec_ctx.symbol_table.get("list")
+    value = exec_ctx.symbol_table.get("value")
+
+    if not isinstance(list_, List):
+      return RTResult().failure(RTError(
+        self.pos_start, self.pos_end,
+        "First argument must be array",
+        exec_ctx
+      ))
+
+    index, err = self._array_index_of(list_, value)
+    if err:
+      return RTResult().failure(err)
+    return RTResult().success(Number(index))
+  execute_index_of.arg_names = ["list", "value"]
+
+  def execute_slice(self, exec_ctx):
+    list_ = exec_ctx.symbol_table.get("list")
+    start = exec_ctx.symbol_table.get("start")
+    end = exec_ctx.symbol_table.get("end")
+
+    if not isinstance(list_, List):
+      return RTResult().failure(RTError(
+        self.pos_start, self.pos_end,
+        "First argument must be array",
+        exec_ctx
+      ))
+    if not isinstance(start, Number):
+      return RTResult().failure(RTError(
+        self.pos_start, self.pos_end,
+        "Second argument must be number",
+        exec_ctx
+      ))
+    if not isinstance(end, Number):
+      return RTResult().failure(RTError(
+        self.pos_start, self.pos_end,
+        "Third argument must be number",
+        exec_ctx
+      ))
+
+    result = List(list_.elements[int(start.value):int(end.value)], list_.elem_annotation)
+    result.set_context(exec_ctx)
+    return RTResult().success(result)
+  execute_slice.arg_names = ["list", "start", "end"]
+
+  def execute_reverse(self, exec_ctx):
+    list_ = exec_ctx.symbol_table.get("list")
+
+    if not isinstance(list_, List):
+      return RTResult().failure(RTError(
+        self.pos_start, self.pos_end,
+        "Argument must be array",
+        exec_ctx
+      ))
+
+    if hasattr(list_, 'is_const') and list_.is_const:
+      return RTResult().failure(RTError(
+        self.pos_start, self.pos_end,
+        "Cannot modify a constant array",
+        exec_ctx
+      ))
+
+    list_.elements.reverse()
+    return RTResult().success(Number.null)
+  execute_reverse.arg_names = ["list"]
+
+  def execute_sort(self, exec_ctx):
+    list_ = exec_ctx.symbol_table.get("list")
+
+    if not isinstance(list_, List):
+      return RTResult().failure(RTError(
+        self.pos_start, self.pos_end,
+        "Argument must be array",
+        exec_ctx
+      ))
+
+    if hasattr(list_, 'is_const') and list_.is_const:
+      return RTResult().failure(RTError(
+        self.pos_start, self.pos_end,
+        "Cannot modify a constant array",
+        exec_ctx
+      ))
+
+    keys = [self._sort_key(element) for element in list_.elements]
+    if any(key is None for key in keys):
+      return RTResult().failure(RTError(
+        self.pos_start, self.pos_end,
+        "Array contains values that cannot be sorted",
+        exec_ctx
+      ))
+    if len({key[0] for key in keys}) > 1:
+      return RTResult().failure(RTError(
+        self.pos_start, self.pos_end,
+        "Array contains mixed value types that cannot be sorted",
+        exec_ctx
+      ))
+
+    list_.elements.sort(key=self._sort_key)
+    return RTResult().success(Number.null)
+  execute_sort.arg_names = ["list"]
     
   def execute_len(self, exec_ctx):
       value = exec_ctx.symbol_table.get("value")

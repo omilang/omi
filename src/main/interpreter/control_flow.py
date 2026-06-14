@@ -163,6 +163,19 @@ class InterpreterControlFlowMixin:
         self._register_defer_expr(context, node.expr_node)
         return RTResult().success(Number.null)
 
+    def visit_ThrowNode(self, node, context):
+        res = RTResult()
+        message = res.register(self.visit(node.message_node, context))
+        if res.should_return():
+            return res
+
+        return RTResult().failure(RTError(
+            node.pos_start,
+            node.pos_end,
+            str(message),
+            context,
+        ))
+
     def visit_ReturnNode(self, node, context):
         res = RTResult()
         from src.values.types.void import Void
@@ -177,15 +190,19 @@ class InterpreterControlFlowMixin:
         return res.success_return(value)
 
     def _runtime_error_value(self, error, context, pos_start, pos_end):
-        trace_lines = error.as_dict()["trace"]
+        data = error.as_dict()
+        trace_lines = data["trace"]
         trace_values = [
             String(line).set_context(context).set_pos(pos_start, pos_end)
             for line in trace_lines
         ]
         return Dict({
-            "type": String(error.as_dict()["type"]),
-            "msg": String(error.as_dict()["msg"]),
+            "type": String(data["type"]),
+            "msg": String(data["msg"]),
             "trace": List(trace_values).set_context(context).set_pos(pos_start, pos_end),
+            "file": String(data["file"]),
+            "line": Number(data["line"]),
+            "column": Number(data["column"]),
         }).set_context(context).set_pos(pos_start, pos_end)
 
     def _pattern_matches(self, pattern, value, context):

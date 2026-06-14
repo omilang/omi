@@ -58,7 +58,6 @@ omi run example.omi
 
 <!-- js highlights OmiLang syntax better than plain text -->
 
-
 ### Hello World
 
 ```js

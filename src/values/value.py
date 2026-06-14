@@ -37,14 +37,50 @@ class Value:
     def dived_by(self, other):
         return None, self.illegal_operation(other, op='/')
 
+    def moded_by(self, other):
+        return None, self.illegal_operation(other, op='%')
+
     def powed_by(self, other):
         return None, self.illegal_operation(other, op='^')
 
+    def _equals_value(self, other):
+        from src.values.types.boolean import Boolean
+        from src.values.types.dict import Dict
+        from src.values.types.list import List
+        from src.values.types.null import Null
+        from src.values.types.number import Number
+        from src.values.types.string import String
+
+        if isinstance(self, Null) or isinstance(other, Null):
+            return isinstance(self, Null) and isinstance(other, Null)
+
+        if isinstance(self, (Boolean, Number)) and isinstance(other, (Boolean, Number)):
+            left = int(self.value) if isinstance(self, Boolean) else self.value
+            right = int(other.value) if isinstance(other, Boolean) else other.value
+            return left == right
+
+        if isinstance(self, String) and isinstance(other, String):
+            return self.value == other.value
+
+        if isinstance(self, List) and isinstance(other, List):
+            if len(self.elements) != len(other.elements):
+                return False
+            return all(left._equals_value(right) for left, right in zip(self.elements, other.elements))
+
+        if isinstance(self, Dict) and isinstance(other, Dict):
+            if set(self.entries.keys()) != set(other.entries.keys()):
+                return False
+            return all(self.entries[key]._equals_value(other.entries[key]) for key in self.entries)
+
+        return False
+
     def get_comparison_eq(self, other):
-        return None, self.illegal_operation(other, op='==')
+        from src.values.types.boolean import Boolean
+        return Boolean(self._equals_value(other)).set_context(self.context), None
 
     def get_comparison_ne(self, other):
-        return None, self.illegal_operation(other, op='!=')
+        from src.values.types.boolean import Boolean
+        return Boolean(not self._equals_value(other)).set_context(self.context), None
 
     def get_comparison_lt(self, other):
         return None, self.illegal_operation(other, op='<')

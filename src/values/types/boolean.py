@@ -30,7 +30,7 @@ class Boolean(Value):
         from src.values.types.number import Number
         if isinstance(other, Number):
             return Boolean(int(self.value) == other.value).set_context(self.context), None
-        return None, Value.illegal_operation(self, other, op='==')
+        return Value.get_comparison_eq(self, other)
 
     def get_comparison_ne(self, other):
         if isinstance(other, Boolean):
@@ -38,7 +38,7 @@ class Boolean(Value):
         from src.values.types.number import Number
         if isinstance(other, Number):
             return Boolean(int(self.value) != other.value).set_context(self.context), None
-        return None, Value.illegal_operation(self, other, op='!=')
+        return Value.get_comparison_ne(self, other)
 
     def anded_by(self, other):
         if isinstance(other, Boolean):

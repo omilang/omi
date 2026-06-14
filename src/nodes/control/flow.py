@@ -15,6 +15,13 @@ class DeferNode:
         self.pos_end = pos_end
 
 
+class ThrowNode:
+    def __init__(self, message_node, pos_start, pos_end):
+        self.message_node = message_node
+        self.pos_start = pos_start
+        self.pos_end = pos_end
+
+
 class PatternNode:
     def __init__(self, kind, name=None, capture_var_tok=None, value=None, pos_start=None, pos_end=None):
         self.kind = kind

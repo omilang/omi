@@ -27,10 +27,14 @@ class RTError(Error):
         return "\n".join(lines)
 
     def as_dict(self):
+        pos = self.pos_start
         return {
             "type": self.name,
             "msg": self.details,
             "trace": self.trace,
+            "file": pos.fn if pos and pos.fn else "<unknown>",
+            "line": pos.ln + 1 if pos else 0,
+            "column": pos.col + 1 if pos else 0,
             "is_test_assertion": self.is_test_assertion,
         }
 

@@ -5,8 +5,16 @@ TT_FSTRING = "FSTRING"
 
 TT_PLUS = "PLUS"
 TT_MINUS = "MINUS"
+TT_PLUSPLUS = "PLUSPLUS"
+TT_MINUSMINUS = "MINUSMINUS"
 TT_MUL = "MUL"
 TT_DIV = "DIV"
+TT_MOD = "MOD"
+TT_PLUS_EQ = "PLUS_EQ"
+TT_MINUS_EQ = "MINUS_EQ"
+TT_MUL_EQ = "MUL_EQ"
+TT_DIV_EQ = "DIV_EQ"
+TT_MOD_EQ = "MOD_EQ"
 TT_POW = "POW"
 TT_TILDE = "TILDE"
 
@@ -47,8 +55,16 @@ TOKEN_DISPLAY_NAMES = {
     TT_NEWLINE: "newline",
     TT_PLUS: "'+'",
     TT_MINUS: "'-'",
+    TT_PLUSPLUS: "'++'",
+    TT_MINUSMINUS: "'--'",
     TT_MUL: "'*'",
     TT_DIV: "'/'",
+    TT_MOD: "'%'",
+    TT_PLUS_EQ: "'+='",
+    TT_MINUS_EQ: "'-='",
+    TT_MUL_EQ: "'*='",
+    TT_DIV_EQ: "'/='",
+    TT_MOD_EQ: "'%='",
     TT_POW: "'^'",
     TT_EQ: "'='",
     TT_EE: "'=='",

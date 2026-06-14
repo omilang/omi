@@ -50,7 +50,7 @@ class LintReport:
         if source_by_file is None:
             source_by_file = self.source_by_file or {}
         if not self.issues:
-            return _color("✓ No lint issues found.", _Colors.GREEN)
+            return _color("No lint issues found.", _Colors.GREEN)
 
         lines = []
         grouped = {}
@@ -118,6 +118,39 @@ class LintReport:
         if self.summary["auto_fixable"]:
             lines.append(_color(f"Auto-fixable: {self.summary['auto_fixable']}", _Colors.GREEN))
         
+        return "\n".join(lines).rstrip() + "\n"
+
+    def to_compact_text(self, source_by_file=None):
+        if source_by_file is None:
+            source_by_file = self.source_by_file or {}
+        if not self.issues:
+            return ""
+
+        lines = []
+        for issue in self.issues:
+            level_marker = {
+                LintLevel.ERROR: "ERROR",
+                LintLevel.WARNING: "WARN",
+                LintLevel.STYLE: "STYLE",
+                LintLevel.SECURITY: "SECURITY",
+            }[issue.level]
+            level_color = {
+                LintLevel.ERROR: _Colors.RED,
+                LintLevel.WARNING: _Colors.YELLOW,
+                LintLevel.STYLE: _Colors.CYAN,
+                LintLevel.SECURITY: _Colors.MAGENTA,
+            }[issue.level]
+            level_text = _color(f"[{level_marker}]", level_color)
+            lines.append(
+                f"{issue.file}:{issue.pos_start.ln + 1}:{issue.pos_start.col + 1} {level_text} [{issue.rule}] {issue.message}"
+            )
+            source = source_by_file.get(issue.file, "")
+            if issue.line:
+                lines.append(f"   {arrow(source or issue.line, issue.pos_start, issue.pos_end).replace(chr(10), chr(10) + '   ')}")
+            if issue.suggestion:
+                lines.append(f"   hint: {issue.suggestion}")
+            lines.append("")
+
         return "\n".join(lines).rstrip() + "\n"
 
     def to_json(self):

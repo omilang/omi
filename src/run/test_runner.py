@@ -119,6 +119,7 @@ def _run_test_file(file_path, failfast=False):
     runtime_flags.eval_enabled = False
     runtime_flags.notypes = False
     runtime_flags.noasync = False
+    runtime_flags.nolint = False
     runtime_flags.repl_output_emitted = False
     runtime_flags.repl_output_ended_with_newline = True
 

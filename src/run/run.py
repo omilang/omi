@@ -7,6 +7,7 @@ from src.values.types.number import Number
 from src.values.types.boolean import Boolean
 from src.values.types.null import Null
 from src.values.function.buildin import BuiltInFunction
+from src.stdlib.system import set_script_args
 from src.preprocessor import process
 from src.run.async_runtime import ensure_event_loop, run_pending_tasks
 from src.linter import LintRunner
@@ -45,6 +46,13 @@ BuiltInFunction.is_function = BuiltInFunction("is_function")
 BuiltInFunction.append = BuiltInFunction("append")
 BuiltInFunction.pop = BuiltInFunction("pop")
 BuiltInFunction.extend = BuiltInFunction("extend")
+BuiltInFunction.insert = BuiltInFunction("insert")
+BuiltInFunction.remove = BuiltInFunction("remove")
+BuiltInFunction.contains = BuiltInFunction("contains")
+BuiltInFunction.index_of = BuiltInFunction("index_of")
+BuiltInFunction.slice = BuiltInFunction("slice")
+BuiltInFunction.reverse = BuiltInFunction("reverse")
+BuiltInFunction.sort = BuiltInFunction("sort")
 BuiltInFunction.len = BuiltInFunction("len")
 BuiltInFunction.eval = BuiltInFunction("eval")
 BuiltInFunction.cancel = BuiltInFunction("cancel")
@@ -82,12 +90,19 @@ global_symbol_table.set("to_bool", BuiltInFunction.to_bool)
 global_symbol_table.set("append", BuiltInFunction.append)
 global_symbol_table.set("pop", BuiltInFunction.pop)
 global_symbol_table.set("extend", BuiltInFunction.extend)
+global_symbol_table.set("insert", BuiltInFunction.insert)
+global_symbol_table.set("remove", BuiltInFunction.remove)
+global_symbol_table.set("contains", BuiltInFunction.contains)
+global_symbol_table.set("index_of", BuiltInFunction.index_of)
+global_symbol_table.set("slice", BuiltInFunction.slice)
+global_symbol_table.set("reverse", BuiltInFunction.reverse)
+global_symbol_table.set("sort", BuiltInFunction.sort)
 global_symbol_table.set("len", BuiltInFunction.len)
 global_symbol_table.set("range", BuiltInFunction.range)
 global_symbol_table.set("eval", BuiltInFunction.eval)
 global_symbol_table.set("cancel", BuiltInFunction.cancel)
 
-def run(fn, text, preserve_flags=False, lint_options=None):
+def run(fn, text, preserve_flags=False, lint_options=None, script_args=None, compact_lint_output=False):
     if not preserve_flags:
         keep_no_colors = flags.no_colors
         flags.debug = False
@@ -95,6 +110,7 @@ def run(fn, text, preserve_flags=False, lint_options=None):
         flags.eval_enabled = False
         flags.notypes = False
         flags.noasync = False
+        flags.nolint = False
         flags.no_colors = keep_no_colors
         flags.use_json = False
         flags.use_fix = False
@@ -123,7 +139,12 @@ def run(fn, text, preserve_flags=False, lint_options=None):
             return None, LintAbortError(str(e)), {}
 
         if lint_options.json_output:
-            print(lint_result.report.to_json())
+            if lint_result.report.issues or not compact_lint_output:
+                print(lint_result.report.to_json())
+        elif compact_lint_output:
+            lint_text = lint_result.report.to_compact_text()
+            if lint_text:
+                print(lint_text, end="")
         else:
             print(lint_result.report.to_text())
 
@@ -135,7 +156,11 @@ def run(fn, text, preserve_flags=False, lint_options=None):
                     handle.write(script_text)
 
         if lint_options.failfast and lint_result.report.summary.get("errors", 0) > 0:
-            return None, LintAbortError("Lint failed: execution stopped"), {}
+            message = "" if compact_lint_output else "Lint failed: execution stopped"
+            return None, LintAbortError(message), {}
+
+    if not preserve_flags:
+        set_script_args(fn if fn != "<stdin>" else None, script_args or [])
 
     clean_text = process(script_text)
 
@@ -175,5 +200,6 @@ def run(fn, text, preserve_flags=False, lint_options=None):
         'noecho': flags.noecho,
         'eval': flags.eval_enabled,
         'noasync': flags.noasync,
+        'nolint': flags.nolint,
     }
     return result.value, result.error, file_flags

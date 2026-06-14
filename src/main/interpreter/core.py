@@ -1,18 +1,28 @@
 import src.var.flags as runtime_flags
 
 from src.error.message.rt import RTError
+from src.nodes.ops.binop import BinOpNode
+from src.nodes.types.number import NumberNode
+from src.nodes.types.subscript import SubscriptAssignNode
+from src.nodes.variables.access import VarAccessNode
+from src.nodes.variables.assign import VarAssignNode
 from src.run.runtime import RTResult
 from src.run.typecheck import check_type
+from src.tokens import Token
 from src.values.types.boolean import Boolean
 from src.values.types.dict import Dict
 from src.values.types.list import List
 from src.values.types.number import Number, Int, Float
 from src.values.types.string import String
 from src.var.token import (
+    TT_INT,
     TT_MUL,
     TT_DIV,
+    TT_MOD,
     TT_PLUS,
+    TT_PLUSPLUS,
     TT_MINUS,
+    TT_MINUSMINUS,
     TT_POW,
     TT_KEYWORD,
     TT_EE,
@@ -25,6 +35,17 @@ from src.var.token import (
 
 
 class InterpreterCoreMixin:
+    def _build_incdec_assign_node(self, target_node, op_tok):
+        op_type = TT_PLUS if op_tok.type == TT_PLUSPLUS else TT_MINUS
+        bin_op_tok = Token(op_type, pos_start=op_tok.pos_start, pos_end=op_tok.pos_end)
+        one_tok = Token(TT_INT, 1, pos_start=op_tok.pos_start, pos_end=op_tok.pos_end)
+        value_node = BinOpNode(target_node, bin_op_tok, NumberNode(one_tok))
+
+        if isinstance(target_node, VarAccessNode):
+            return VarAssignNode(target_node.var_name_tok, value_node, None, is_reassign=True)
+
+        return SubscriptAssignNode(target_node, value_node, target_node.pos_start, value_node.pos_end)
+
     def _push_defer_scope(self, context):
         if not hasattr(context, "defer_scopes"):
             context.defer_scopes = []
@@ -294,11 +315,258 @@ class InterpreterCoreMixin:
         context.symbol_table.set(var_name, value)
         return res.success(value)
 
+    def _subscript_value(self, container, index, pos_start, pos_end, context):
+        if isinstance(container, Dict):
+            if not isinstance(index, String):
+                return None, RTError(
+                    pos_start,
+                    pos_end,
+                    f"Dict key must be a string, got {type(index).__name__.lower()}",
+                    context,
+                )
+            value, error = container.get_member(index.value)
+            if error:
+                return None, RTError(
+                    pos_start,
+                    pos_end,
+                    f"Key '{index.value}' not found in dict",
+                    context,
+                )
+            return value, None
+
+        if isinstance(container, String):
+            if not isinstance(index, Int):
+                return None, RTError(
+                    pos_start,
+                    pos_end,
+                    f"String index must be an integer, got {type(index).__name__.lower()}",
+                    context,
+                )
+            try:
+                return String(container.value[index.value]), None
+            except IndexError:
+                return None, RTError(
+                    pos_start,
+                    pos_end,
+                    f"String index {index.value} out of range (length {len(container.value)})",
+                    context,
+                )
+
+        if isinstance(container, List):
+            if not isinstance(index, Int):
+                return None, RTError(
+                    pos_start,
+                    pos_end,
+                    f"List index must be an integer, got {type(index).__name__.lower()}",
+                    context,
+                )
+            try:
+                return container.elements[index.value], None
+            except IndexError:
+                return None, RTError(
+                    pos_start,
+                    pos_end,
+                    f"List index {index.value} out of range (length {len(container.elements)})",
+                    context,
+                )
+
+        return None, RTError(
+            pos_start,
+            pos_end,
+            "Subscript access '[]' is only supported for dicts, lists and strings",
+            context,
+        )
+
+    def _slice_bound(self, node, context, res, name):
+        if node is None:
+            return None, None
+        value = res.register(self.visit(node, context))
+        if res.should_return():
+            return None, res
+        if not isinstance(value, Int):
+            return None, res.failure(RTError(
+                node.pos_start,
+                node.pos_end,
+                f"Slice {name} must be an integer, got {type(value).__name__.lower()}",
+                context,
+            ))
+        return value.value, None
+
+    def _slice_value(self, container, slice_node, pos_start, pos_end, context, res):
+        start, failure = self._slice_bound(slice_node.start_node, context, res, "start")
+        if failure:
+            return None, failure
+        end, failure = self._slice_bound(slice_node.end_node, context, res, "end")
+        if failure:
+            return None, failure
+
+        if isinstance(container, List):
+            return List(container.elements[start:end], container.elem_annotation).set_context(context), None
+
+        if isinstance(container, String):
+            return String(container.value[start:end]).set_context(context), None
+
+        return None, res.failure(RTError(
+            pos_start,
+            pos_end,
+            "Slice access '[start:end]' is only supported for lists and strings",
+            context,
+        ))
+
+    def _resolve_subscript_target(self, node, context, res):
+        from src.nodes.types.subscript import DictSubscriptNode
+        from src.nodes.types.subscript import SliceNode
+        from src.nodes.variables.access import VarAccessNode
+        from src.values.types.void import Uninitialized
+
+        if isinstance(node.base_node, VarAccessNode):
+            var_name = node.base_node.var_name_tok.value
+            base = context.symbol_table.get(var_name)
+            if base is None:
+                return None, None, res.failure(RTError(
+                    node.base_node.pos_start,
+                    node.base_node.pos_end,
+                    f"'{var_name}' is not defined",
+                    context,
+                ))
+            if isinstance(base, Uninitialized):
+                return None, None, res.failure(RTError(
+                    node.base_node.pos_start,
+                    node.base_node.pos_end,
+                    f"Variable '{var_name}' has no value assigned",
+                    context,
+                ))
+            if hasattr(base, "is_const") and base.is_const:
+                return None, None, res.failure(RTError(
+                    node.pos_start,
+                    node.pos_end,
+                    f"Cannot modify constant '{var_name}'",
+                    context,
+                ))
+            container = base
+        elif isinstance(node.base_node, DictSubscriptNode):
+            parent, parent_index, failure = self._resolve_subscript_target(node.base_node, context, res)
+            if failure:
+                return None, None, failure
+            container, error = self._subscript_value(
+                parent,
+                parent_index,
+                node.base_node.pos_start,
+                node.base_node.pos_end,
+                context,
+            )
+            if error:
+                return None, None, res.failure(error)
+        else:
+            return None, None, res.failure(RTError(
+                node.base_node.pos_start,
+                node.base_node.pos_end,
+                "Subscript assignment target must start from a variable",
+                context,
+            ))
+
+        if isinstance(node.index_node, SliceNode):
+            return None, None, res.failure(RTError(
+                node.pos_start,
+                node.pos_end,
+                "Slice assignment is not supported",
+                context,
+            ))
+
+        index = res.register(self.visit(node.index_node, context))
+        if res.should_return():
+            return None, None, res
+        return container, index, None
+
+    def _validate_container_after_subscript_set(self, container, value, context, node):
+        if isinstance(container, List):
+            err = container._check_elem(value)
+            if err:
+                return err
+
+        ann = getattr(container, "type_annotation", None)
+        if ann is not None:
+            return check_type(container, ann, context, node.pos_start, node.pos_end)
+        return None
+
+    def visit_SubscriptAssignNode(self, node, context):
+        res = RTResult()
+        container, index, failure = self._resolve_subscript_target(node.target_node, context, res)
+        if failure:
+            return failure
+        if res.should_return():
+            return res
+
+        value = res.register(self.visit(node.value_node, context))
+        if res.should_return():
+            return res
+
+        if isinstance(container, Dict):
+            if not isinstance(index, String):
+                return res.failure(RTError(
+                    node.target_node.pos_start,
+                    node.target_node.pos_end,
+                    f"Dict key must be a string, got {type(index).__name__.lower()}",
+                    context,
+                ))
+            had_key = index.value in container.entries
+            old_value = container.entries.get(index.value)
+            container.entries[index.value] = value
+            err = self._validate_container_after_subscript_set(container, value, context, node)
+            if err:
+                if had_key:
+                    container.entries[index.value] = old_value
+                else:
+                    del container.entries[index.value]
+                return res.failure(err)
+            return res.success(value)
+
+        if isinstance(container, List):
+            if not isinstance(index, Int):
+                return res.failure(RTError(
+                    node.target_node.pos_start,
+                    node.target_node.pos_end,
+                    f"List index must be an integer, got {type(index).__name__.lower()}",
+                    context,
+                ))
+            try:
+                old_value = container.elements[index.value]
+                container.elements[index.value] = value
+            except IndexError:
+                return res.failure(RTError(
+                    node.target_node.pos_start,
+                    node.target_node.pos_end,
+                    f"List index {index.value} out of range (length {len(container.elements)})",
+                    context,
+                ))
+            err = self._validate_container_after_subscript_set(container, value, context, node)
+            if err:
+                container.elements[index.value] = old_value
+                return res.failure(err)
+            return res.success(value)
+
+        return res.failure(RTError(
+            node.target_node.pos_start,
+            node.target_node.pos_end,
+            "Subscript assignment '[] =' is only supported for dicts and lists",
+            context,
+        ))
+
     def visit_BinOpNode(self, node, context):
         res = RTResult()
         left = res.register(self.visit(node.left_node, context))
         if res.should_return():
             return res
+        if node.op_tok.matches(TT_KEYWORD, "and") and not left.is_true():
+            result, error = left.anded_by(Boolean.true.copy().set_context(context))
+            if error:
+                return res.failure(error)
+            return res.success(result.set_pos(node.pos_start, node.pos_end))
+        if node.op_tok.matches(TT_KEYWORD, "or") and left.is_true():
+            result, error = left.ored_by(Boolean.false.copy().set_context(context))
+            if error:
+                return res.failure(error)
+            return res.success(result.set_pos(node.pos_start, node.pos_end))
         right = res.register(self.visit(node.right_node, context))
         if res.should_return():
             return res
@@ -311,6 +579,8 @@ class InterpreterCoreMixin:
             result, error = left.multed_by(right)
         elif node.op_tok.type == TT_DIV:
             result, error = left.dived_by(right)
+        elif node.op_tok.type == TT_MOD:
+            result, error = left.moded_by(right)
         elif node.op_tok.type == TT_POW:
             result, error = left.powed_by(right)
         elif node.op_tok.type == TT_EE:
@@ -325,6 +595,8 @@ class InterpreterCoreMixin:
             result, error = left.get_comparison_lte(right)
         elif node.op_tok.type == TT_GTE:
             result, error = left.get_comparison_gte(right)
+        elif node.op_tok.matches(TT_KEYWORD, "in"):
+            result, error = self._membership_in(left, right, context)
         elif node.op_tok.matches(TT_KEYWORD, "and"):
             result, error = left.anded_by(right)
         elif node.op_tok.matches(TT_KEYWORD, "or"):
@@ -333,6 +605,25 @@ class InterpreterCoreMixin:
         if error:
             return res.failure(error)
         return res.success(result.set_pos(node.pos_start, node.pos_end))
+
+    def _membership_in(self, item, container, context):
+        if isinstance(container, List):
+            for element in container.elements:
+                if element._equals_value(item):
+                    return Boolean.true.copy().set_context(context), None
+            return Boolean.false.copy().set_context(context), None
+
+        if isinstance(container, Dict):
+            if not isinstance(item, String):
+                return None, item.illegal_operation(container, op="in")
+            return Boolean(item.value in container.entries).set_context(context), None
+
+        if isinstance(container, String):
+            if not isinstance(item, String):
+                return None, item.illegal_operation(container, op="in")
+            return Boolean(item.value in container.value).set_context(context), None
+
+        return None, item.illegal_operation(container, op="in")
 
     def visit_UnaryOpNode(self, node, context):
         res = RTResult()
@@ -402,58 +693,40 @@ class InterpreterCoreMixin:
         return res.success(left.copy().set_pos(node.pos_start, node.pos_end).set_context(context))
 
     def visit_DictSubscriptNode(self, node, context):
+        from src.nodes.types.subscript import SliceNode
+
         res = RTResult()
 
         base = res.register(self.visit(node.base_node, context))
         if res.should_return():
             return res
 
+        if isinstance(node.index_node, SliceNode):
+            value, failure = self._slice_value(base, node.index_node, node.pos_start, node.pos_end, context, res)
+            if failure:
+                return failure
+            return res.success(value.copy().set_pos(node.pos_start, node.pos_end).set_context(context))
+
         index = res.register(self.visit(node.index_node, context))
         if res.should_return():
             return res
 
-        if isinstance(base, Dict):
-            if not isinstance(index, String):
-                return res.failure(RTError(
-                    node.pos_start,
-                    node.pos_end,
-                    f"Dict key must be a string, got {type(index).__name__.lower()}",
-                    context,
-                ))
-            value, error = base.get_member(index.value)
-            if error:
-                return res.failure(RTError(
-                    node.pos_start,
-                    node.pos_end,
-                    f"Key '{index.value}' not found in dict",
-                    context,
-                ))
-            return res.success(value.copy().set_pos(node.pos_start, node.pos_end).set_context(context))
+        value, error = self._subscript_value(base, index, node.pos_start, node.pos_end, context)
+        if error:
+            return res.failure(error)
+        return res.success(value.copy().set_pos(node.pos_start, node.pos_end).set_context(context))
 
-        if isinstance(base, List):
-            from src.values.types.number import Int
+    def visit_IncDecNode(self, node, context):
+        res = RTResult()
+        original = res.register(self.visit(node.target_node, context))
+        if res.should_return():
+            return res
 
-            if not isinstance(index, Int):
-                return res.failure(RTError(
-                    node.pos_start,
-                    node.pos_end,
-                    f"List index must be an integer, got {type(index).__name__.lower()}",
-                    context,
-                ))
-            try:
-                value = base.elements[index.value]
-            except IndexError:
-                return res.failure(RTError(
-                    node.pos_start,
-                    node.pos_end,
-                    f"List index {index.value} out of range (length {len(base.elements)})",
-                    context,
-                ))
-            return res.success(value.copy().set_pos(node.pos_start, node.pos_end).set_context(context))
+        assign_node = self._build_incdec_assign_node(node.target_node, node.op_tok)
+        updated = res.register(self.visit(assign_node, context))
+        if res.should_return():
+            return res
 
-        return res.failure(RTError(
-            node.pos_start,
-            node.pos_end,
-            "Subscript access '[]' is only supported for dicts and lists",
-            context,
-        ))
+        if node.is_postfix:
+            return res.success(original.copy().set_pos(node.pos_start, node.pos_end).set_context(context))
+        return res.success(updated.copy().set_pos(node.pos_start, node.pos_end).set_context(context))
